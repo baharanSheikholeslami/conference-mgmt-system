@@ -1,0 +1,25 @@
+{% load portal %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>عنوان پروژه</th><th>نویسنده</th><th>نقش شما</th><th>وضعیت</th><th>اقدام شما</th><th>نزدیک‌ترین مهلت</th></tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td><a href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td>{{ row.case.author }}</td>
+      <td>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</td>
+      <td>{% include "workflow/_state_badge.html" with case=row.case %}</td>
+      <td>{% for offer in row.todo %}{{ offer.transition.label }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
+      <td>
+        {% if row.deadline %}
+          <span{% if row.deadline.is_overdue %} class="overdue"{% endif %}>{{ row.deadline.due_date|jalali }}{% if row.deadline.is_overdue %} (گذشته){% endif %}</span><br>
+          <small>{{ row.deadline.get_kind_display }}</small>
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

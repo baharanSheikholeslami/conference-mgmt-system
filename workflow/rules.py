@@ -38,3 +38,15 @@ def grade_entry_deadline(academic_year: int, semester: str) -> date:
 
 def thesis_delivery_deadline(academic_year: int, semester: str) -> date:
     return grade_entry_deadline(academic_year, semester) - timedelta(weeks=THESIS_LEAD_WEEKS)
+
+
+def current_term(today: date):
+    """(سال تحصیلی، نیم‌سال) جاری بر اساس تقویم شمسی؛ پیش‌فرض فرم ثبت پرونده."""
+    j = jdatetime.date.fromgregorian(date=today)
+    if j.month >= 11:                       # بهمن و اسفند
+        return j.year, Semester.SECOND
+    if j.month >= 7:                        # مهر تا دی
+        return j.year, Semester.FIRST
+    if j.month >= 4:                        # تیر تا شهریور
+        return j.year - 1, Semester.SUMMER
+    return j.year - 1, Semester.SECOND      # فروردین تا خرداد

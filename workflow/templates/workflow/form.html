@@ -1,0 +1,19 @@
+{% extends "workflow/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block content %}
+{% if case %}<a class="crumb" href="{% url 'case_detail' case.pk %}">→ بازگشت به پرونده</a>
+{% else %}<a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>{% endif %}
+<div class="card">
+  <h1>{{ title }}</h1>
+  {% if case %}<p class="muted">{{ case.title_fa }} — <span class="badge plain">{{ case.get_state_display }}</span></p>{% endif %}
+  <form method="post" class="stack"{% if multipart %} enctype="multipart/form-data"{% endif %}>
+    {% csrf_token %}
+    {{ form.as_div }}
+    <div class="actions">
+      <button class="btn{% if danger %} danger solid{% endif %}" type="submit">{{ submit_label }}</button>
+      <a class="btn secondary" href="{% if case %}{% url 'case_detail' case.pk %}{% else %}{% url 'dashboard' %}{% endif %}">انصراف</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

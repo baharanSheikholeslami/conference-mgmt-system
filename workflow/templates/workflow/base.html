@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}سامانه مدیریت پروژه کارشناسی{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'workflow/style.css' %}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'dashboard' %}">سامانه مدیریت پروژه کارشناسی</a>
+    {% if user.is_authenticated %}
+      <div class="who">
+        <span>{{ user }} <small>({{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %})</small></span>
+        {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">خروج</button></form>
+      </div>
+    {% endif %}
+  </header>
+  <main class="{% block main_class %}{% endblock %}">
+    {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

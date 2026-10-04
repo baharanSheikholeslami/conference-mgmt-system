@@ -1,0 +1,126 @@
+/* ظاهر پورتال — بدون وابستگی به CDN تا روی شبکه‌ی داخلی هم کار کند */
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1c2330; --muted: #667085; --line: #e2e5ea;
+  --accent: #1f5f8b; --accent-ink: #ffffff; --accent-soft: #e8f1f7;
+  --ok: #1a7f4b; --ok-soft: #e6f4ec; --warn: #9a5b00; --warn-soft: #fdf1dc;
+  --danger: #b42318; --danger-soft: #fdecea;
+}
+* { box-sizing: border-box; }
+html { font-size: 15px; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink); line-height: 1.8;
+  font-family: "Vazirmatn", "Vazir", "IRANSans", "Segoe UI", Tahoma, system-ui, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 1.45rem; margin: 0 0 .25rem; line-height: 1.6; }
+h2 { font-size: 1.05rem; margin: 0 0 .8rem; }
+small, .muted { color: var(--muted); }
+.ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+
+.topbar {
+  background: var(--accent); color: var(--accent-ink); padding: .7rem 1.25rem;
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;
+}
+.topbar a.brand { color: inherit; font-weight: 700; font-size: 1.05rem; }
+.topbar .who { display: flex; align-items: center; gap: 1rem; }
+.topbar small { color: rgba(255, 255, 255, .78); }
+.topbar form { margin: 0; }
+.topbar button {
+  background: transparent; color: inherit; border: 1px solid rgba(255, 255, 255, .5);
+  border-radius: 6px; padding: .15rem .8rem; font: inherit; cursor: pointer;
+}
+.topbar button:hover { background: rgba(255, 255, 255, .14); }
+
+main { max-width: 1040px; margin: 1.5rem auto 3rem; padding: 0 1rem; }
+main.narrow { max-width: 620px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 1.15rem 1.3rem; margin-bottom: 1.1rem;
+}
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
+.crumb { font-size: .9rem; margin-bottom: .6rem; display: inline-block; }
+
+/* پیام‌ها */
+.msg { border-radius: 8px; padding: .6rem 1rem; margin-bottom: 1rem; border: 1px solid transparent; }
+.msg.success { background: var(--ok-soft); color: var(--ok); border-color: #bfe3cd; }
+.msg.error { background: var(--danger-soft); color: var(--danger); border-color: #f4c7c2; }
+.msg.info { background: var(--accent-soft); color: var(--accent); border-color: #c5dcea; }
+
+/* دکمه‌ها */
+.btn {
+  display: inline-block; background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent);
+  border-radius: 7px; padding: .4rem 1.05rem; font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn:hover { text-decoration: none; filter: brightness(1.1); }
+.btn.secondary { background: var(--card); color: var(--accent); }
+.btn.danger { background: var(--card); color: var(--danger); border-color: var(--danger); }
+.btn.danger.solid { background: var(--danger); color: #fff; }
+.btn.disabled { background: #eceef1; color: #98a1ae; border-color: #dfe2e7; cursor: not-allowed; filter: none; }
+.actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.actions .why { flex-basis: 100%; color: var(--warn); font-size: .88rem; margin-top: -.25rem; }
+.todo { border-right: 4px solid var(--accent); }
+
+/* برچسب‌ها */
+.badge {
+  display: inline-block; border-radius: 999px; padding: 0 .7rem; font-size: .82rem; white-space: nowrap;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid #c5dcea;
+}
+.badge.done { background: var(--ok-soft); color: var(--ok); border-color: #bfe3cd; }
+.badge.stopped { background: var(--danger-soft); color: var(--danger); border-color: #f4c7c2; }
+.badge.wait { background: var(--warn-soft); color: var(--warn); border-color: #f1d9a8; }
+.badge.plain { background: #f0f2f5; color: var(--muted); border-color: var(--line); }
+.overdue { color: var(--danger); font-weight: 600; }
+
+/* جدول‌ها */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: right; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; font-size: .85rem; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.empty { color: var(--muted); padding: .4rem 0; margin: 0; }
+
+/* نوار پیشرفت */
+.progress { height: 8px; background: #e6e9ee; border-radius: 99px; overflow: hidden; margin: .5rem 0 .3rem; }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+
+/* مشخصات پرونده */
+dl.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .5rem 1.5rem; margin: 0; }
+dl.facts dt { color: var(--muted); font-size: .85rem; }
+dl.facts dd { margin: 0; font-weight: 600; }
+
+/* نظر داوران و تاریخچه */
+.review { background: #f8f9fb; border: 1px solid var(--line); border-radius: 8px; padding: .5rem .8rem; margin-top: .45rem; }
+.review p { margin: .25rem 0 0; white-space: pre-line; }
+ol.timeline { list-style: none; margin: 0; padding: 0; }
+ol.timeline li { border-right: 2px solid var(--line); padding: 0 1rem .9rem 0; position: relative; }
+ol.timeline li::before {
+  content: ""; position: absolute; right: -6px; top: .65rem; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--accent);
+}
+ol.timeline li:last-child { padding-bottom: 0; }
+ol.timeline .note { margin: .2rem 0 0; white-space: pre-line; color: #3b4455; }
+
+/* فرم‌ها (خروجی form.as_div) */
+form.stack > div { margin-bottom: 1.1rem; }
+form.stack label, form.stack legend { display: block; font-weight: 600; margin-bottom: .3rem; padding: 0; }
+form.stack input[type=text], form.stack input[type=number], form.stack input[type=password],
+form.stack input[type=file], form.stack select, form.stack textarea {
+  width: 100%; padding: .5rem .7rem; font: inherit; color: inherit; background: #fff;
+  border: 1px solid #c9ced6; border-radius: 7px;
+}
+form.stack input:focus, form.stack select:focus, form.stack textarea:focus {
+  outline: 2px solid var(--accent-soft); border-color: var(--accent);
+}
+form.stack fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+form.stack fieldset label {
+  font-weight: 400; display: flex; gap: .55rem; align-items: baseline; margin-bottom: .4rem;
+  padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+}
+form.stack fieldset label:hover { background: #f8f9fb; }
+.helptext { color: var(--muted); font-size: .86rem; margin-bottom: .3rem; }
+ul.errorlist { list-style: none; margin: 0 0 .35rem; padding: 0; color: var(--danger); font-size: .9rem; }
+ul.errorlist.nonfield {
+  background: var(--danger-soft); border: 1px solid #f4c7c2; border-radius: 8px;
+  padding: .6rem 1rem; margin-bottom: 1rem; font-size: 1rem;
+}

@@ -1,0 +1,15 @@
+{% extends "workflow/base.html" %}
+{% block title %}ورود{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>ورود به سامانه</h1>
+  <p class="muted">با حساب کاربری دانشگاهی خود وارد شوید. نقش شما در هر پرونده (نویسنده، استاد راهنما، داور، مدیر گروه یا آموزش) خودکار تشخیص داده می‌شود.</p>
+  <form method="post" class="stack">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn" type="submit">ورود</button>
+  </form>
+</div>
+{% endblock %}

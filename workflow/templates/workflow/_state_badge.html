@@ -1,0 +1,1 @@
+<span class="badge {% if case.state == 'completed' %}done{% elif case.is_terminal %}stopped{% elif case.state == 'revision' %}wait{% endif %}">{{ case.get_state_display }}</span>

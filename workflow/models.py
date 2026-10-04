@@ -84,8 +84,9 @@ class ProjectCase(models.Model):
         verbose_name = "پرونده‌ی پروژه"
         verbose_name_plural = "پرونده‌های پروژه"
         constraints = [
+            # پرونده‌ای که پیش از انتخاب استاد راهنما لغو شود هم استاد راهنما ندارد
             models.CheckConstraint(
-                condition=Q(state=State.ADVISOR_SELECTION)
+                condition=Q(state__in=[State.ADVISOR_SELECTION, State.CANCELLED])
                 | (Q(advisor__isnull=False) & Q(department__isnull=False)),
                 name="advisor_required_after_selection"),
             models.CheckConstraint(
@@ -126,7 +127,8 @@ class ProjectCase(models.Model):
             roles.add(CaseRole.HEAD)
         if user.user_type == UserType.EDU_STAFF:
             roles.add(CaseRole.EDU)
-        if self.pk and self.referee_assignments.filter(referee=user).exists():
+        # .all() از کش prefetch استفاده می‌کند؛ داشبورد برای هر پرونده کوئری جدا نمی‌زند
+        if self.pk and any(a.referee_id == user.id for a in self.referee_assignments.all()):
             roles.add(CaseRole.REFEREE)
         return roles
 

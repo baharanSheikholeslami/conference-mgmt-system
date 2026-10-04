@@ -120,6 +120,12 @@ LANGUAGE_CODE = 'fa'
 
 TIME_ZONE = 'Asia/Tehran'
 
+# ورود و خروج (فاز ۲)
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGOUT_REDIRECT_URL = 'login'
+
+# فایل‌های بارگذاری‌شده فقط از طریق ویوی document_download (با کنترل دسترسی) سرو می‌شوند
 MEDIA_URL = 'media/'
 
 MEDIA_ROOT = BASE_DIR / 'media'

@@ -1,15 +1,17 @@
+from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from workflow.enums import Semester, State, UserType
-from workflow.models import Department, ProjectCase, RefereeAssignment, User
+from workflow.enums import DeadlineKind, DocKind, Semester, State, UserType
+from workflow.models import Department, DocumentVersion, ProjectCase, RefereeAssignment, User
 
 PASSWORD = "test1234"
 
 # نام کاربری، نام، نام خانوادگی، نوع حساب، مدیر گروه؟، شماره دانشجویی، زمینه‌های تخصصی
 USERS = [
     ("student1", "بهاران", "شیخ‌الاسلامی", UserType.STUDENT, False, "40031089", ""),
+    ("student2", "دانشجوی", "دوم", UserType.STUDENT, False, "40031090", ""),   # بدون پرونده؛ برای آزمودن ثبت از صفر
     ("external1", "نویسنده", "غیردانشجو", UserType.EXTERNAL, False, "", ""),
     ("advisor1", "سلیمان", "فلاح", UserType.FACULTY, False, "",
      "هوش مصنوعی، پردازش زبان طبیعی، عامل‌های مبتنی بر مدل زبانی بزرگ"),
@@ -21,6 +23,22 @@ USERS = [
      "معماری کامپیوتر، سیستم‌های نهفته"),
     ("edu1", "کارشناس", "آموزش", UserType.EDU_STAFF, False, "", ""),
 ]
+
+
+def sample_pdf():
+    """یک PDF یک‌صفحه‌ای خالی و معتبر، تا پرونده‌ی نمونه‌ی «در حال داوری» سندی برای داوری داشته باشد."""
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
+               b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+               b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>"]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (i, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % o for o in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return ContentFile(out, name="sample-proposal.pdf")
 
 
 class Command(BaseCommand):
@@ -62,7 +80,15 @@ class Command(BaseCommand):
             RefereeAssignment.objects.get_or_create(
                 case=case2, referee=users[ref], defaults={"assigned_by": users["head1"]})
 
+        if not case2.versions.exists():
+            DocumentVersion.objects.create(case=case2, kind=DocKind.PROPOSAL, number=1,
+                                           file=sample_pdf(), note="فایل نمونه",
+                                           uploaded_by=users["external1"])
+
         for c in (case1, case2):
             c.sync_deadlines()
+        # پرونده‌ی ۲ از مرحله‌ی «ثبت در آموزش» گذشته است؛ پس مهلت تحویل پیشنهادش انجام‌شده است
+        case2.deadlines.filter(kind=DeadlineKind.PROPOSAL_SUBMISSION, satisfied_at__isnull=True).update(
+            satisfied_at=case2.edu_received_at)
 
         self.stdout.write(self.style.SUCCESS("داده‌ی نمونه آماده است (رمز همه‌ی کاربران: test1234)."))

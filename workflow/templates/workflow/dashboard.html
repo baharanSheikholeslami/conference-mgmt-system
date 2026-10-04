@@ -1,0 +1,23 @@
+{% extends "workflow/base.html" %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>داشبورد</h1>
+    <span class="muted">پرونده‌هایی که در آن‌ها نقش دارید</span>
+  </div>
+  {% if can_create %}<a class="btn" href="{% url 'case_create' %}">+ ثبت پرونده‌ی جدید</a>{% endif %}
+</div>
+
+<section class="card todo">
+  <h2>در انتظار اقدام شما</h2>
+  {% if pending %}{% include "workflow/_case_table.html" with rows=pending %}
+  {% else %}<p class="empty">در حال حاضر هیچ پرونده‌ای منتظر اقدام شما نیست.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>سایر پرونده‌ها</h2>
+  {% if others %}{% include "workflow/_case_table.html" with rows=others %}
+  {% else %}<p class="empty">پرونده‌ی دیگری وجود ندارد.</p>{% endif %}
+</section>
+{% endblock %}

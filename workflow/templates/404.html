@@ -1,0 +1,10 @@
+{% extends "workflow/base.html" %}
+{% block title %}پیدا نشد{% endblock %}
+{% block main_class %}narrow{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>صفحه پیدا نشد</h1>
+  <p class="muted">چنین صفحه‌ای وجود ندارد یا شما به آن دسترسی ندارید.</p>
+  <a class="btn" href="{% url 'dashboard' %}">بازگشت به داشبورد</a>
+</div>
+{% endblock %}
