@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -47,6 +48,10 @@ class WorkflowTestCase(TestCase):
 
     def do(self, case, action, actor, **kw):
         return services.perform(case, action, actor, **kw)
+
+    def on(self, day):
+        """«سفر در زمان»: درون بلوک with، تاریخ امروز برای کل سامانه برابر day است."""
+        return mock.patch("django.utils.timezone.localdate", return_value=day)
 
     def new_case(self, author=None):
         return services.create_case(author or self.student, "عنوان آزمایشی")
@@ -99,7 +104,8 @@ class HappyPathTests(WorkflowTestCase):
         defense = rules.add_months(case.final_approved_at, 3)
         case = self.do(case, "schedule_defense", self.edu, defense_date=defense,
                        defense_place="کلاس ۱۰۱")
-        case = self.do(case, "record_result", self.advisor, grade="18.5")
+        with self.on(defense):                                       # روز دفاع
+            case = self.do(case, "record_result", self.advisor, grade="18.5")
 
         self.assertEqual((case.state, case.grade), (State.COMPLETED, Decimal("18.5")))
         self.assertTrue(case.is_terminal)
@@ -209,11 +215,12 @@ class GuardTests(WorkflowTestCase):
         services.upload_document(case, self.external, DocKind.THESIS, pdf())
         case = self.do(case, "submit_thesis", self.external)
         case = self.do(case, "thesis_approve", self.advisor)
-        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن",
-                       defense_date=rules.add_months(case.final_approved_at, 4))
-        with self.assertRaises(services.GuardFailed):
-            self.do(case, "record_result", self.advisor, grade="19")
-        case = self.do(case, "record_result", self.advisor)
+        defense = rules.add_months(case.final_approved_at, 4)
+        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن", defense_date=defense)
+        with self.on(defense + timedelta(days=1)):
+            with self.assertRaises(services.GuardFailed):
+                self.do(case, "record_result", self.advisor, grade="19")
+            case = self.do(case, "record_result", self.advisor)
         self.assertEqual((case.state, case.grade), (State.COMPLETED, None))
 
     def test_revision_loop(self):
@@ -259,10 +266,30 @@ class GuardTests(WorkflowTestCase):
             self.do(case, "schedule_defense", self.edu, defense_date=earliest)
         case = self.do(case, "schedule_defense", self.edu, defense_place="سالن",
                        defense_date=earliest)
-        with self.assertRaises(services.GuardFailed):
-            self.do(case, "record_result", self.advisor, grade="21")
-        with self.assertRaises(services.GuardFailed):
-            self.do(case, "record_result", self.advisor)
+        with self.on(earliest):
+            with self.assertRaises(services.GuardFailed):
+                self.do(case, "record_result", self.advisor, grade="21")
+            with self.assertRaises(services.GuardFailed):
+                self.do(case, "record_result", self.advisor)
+
+    def test_result_cannot_be_recorded_before_the_defense_day(self):
+        case = self.to_in_progress()
+        services.upload_document(case, self.student, DocKind.THESIS, pdf())
+        case = self.do(case, "submit_thesis", self.student)
+        case = self.do(case, "thesis_approve", self.advisor)
+        defense = rules.add_months(case.final_approved_at, 3)
+        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن", defense_date=defense)
+
+        with self.on(defense - timedelta(days=1)):
+            offer = services.available_actions(case, self.advisor)[0]
+            self.assertTrue(offer.blocked and offer.waiting)
+            self.assertFalse(services.is_pending_for(case, self.advisor))   # هنوز کاری از او ساخته نیست
+            with self.assertRaises(services.GuardFailed):
+                self.do(case, "record_result", self.advisor, grade="18")
+        with self.on(defense):
+            self.assertTrue(services.is_pending_for(case, self.advisor))
+            case = self.do(case, "record_result", self.advisor, grade="18")
+        self.assertEqual(case.state, State.COMPLETED)
 
     def test_rejection_and_cancellation_are_terminal(self):
         case = self.to_referee_review()

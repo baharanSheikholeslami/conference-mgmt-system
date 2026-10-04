@@ -25,6 +25,7 @@ small, .muted { color: var(--muted); }
 .topbar a.brand { color: inherit; font-weight: 700; font-size: 1.05rem; }
 .topbar .who { display: flex; align-items: center; gap: 1rem; }
 .topbar small { color: rgba(255, 255, 255, .78); }
+.topbar .who a { color: inherit; text-decoration: underline; font-size: .9rem; }
 .topbar form { margin: 0; }
 .topbar button {
   background: transparent; color: inherit; border: 1px solid rgba(255, 255, 255, .5);

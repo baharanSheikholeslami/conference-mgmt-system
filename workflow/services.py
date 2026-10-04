@@ -90,9 +90,22 @@ def next_deadline(case):
 
 @dataclass(frozen=True)
 class Offer:
-    """یک اقدام قابل‌نمایش به کاربر. اگر blocked پر باشد دکمه غیرفعال و دلیلش نمایش داده می‌شود."""
+    """
+    یک اقدام قابل‌نمایش به کاربر. اگر blocked پر باشد دکمه غیرفعال و دلیلش نمایش داده می‌شود.
+    waiting یعنی مانع فقط با گذشت زمان رفع می‌شود (مثل نرسیدن روز دفاع) و کاری از کاربر ساخته نیست.
+    """
     transition: sm.Transition
     blocked: str = ""
+    waiting: bool = False
+
+    @property
+    def pending(self):
+        """آیا این اقدام پرونده را «در انتظار اقدام» کاربر می‌کند؟ (لغو همیشه ممکن است و حساب نمی‌شود)"""
+        return self.transition.action != "cancel" and not self.waiting
+
+
+def defense_is_ahead(case):
+    return bool(case.defense_date) and timezone.localdate() < case.defense_date
 
 
 def blocker(case, action, user):
@@ -116,6 +129,9 @@ def blocker(case, action, user):
             return "هنوز نسخه‌ای از پیشنهاد برای داوری بارگذاری نشده است."
         if has_reviewed(case, user, version):
             return "شما برای این نسخه قبلاً رأی داده‌اید."
+    elif action == "record_result":
+        if defense_is_ahead(case):
+            return f"ثبت نتیجه پیش از روز دفاع ({to_jalali(case.defense_date)}) ممکن نیست."
     return ""
 
 
@@ -129,13 +145,14 @@ def available_actions(case, user):
         reason = blocker(case, t.action, user)
         if t.action == "submit_review" and reason:
             continue          # داوری که رأی داده دیگر کاری در این پرونده ندارد
-        offers.append(Offer(t, reason))
+        waiting = t.action == "record_result" and defense_is_ahead(case)
+        offers.append(Offer(t, reason, waiting))
     return offers
 
 
 def is_pending_for(case, user):
-    """آیا پرونده «در انتظار اقدام» این کاربر است؟ (لغو همیشه ممکن است و اقدام در انتظار حساب نمی‌شود)"""
-    return any(o.transition.action != "cancel" for o in available_actions(case, user))
+    """آیا پرونده «در انتظار اقدام» این کاربر است؟"""
+    return any(o.pending for o in available_actions(case, user))
 
 
 # ───────────────────────── اثرات هر گذار ─────────────────────────

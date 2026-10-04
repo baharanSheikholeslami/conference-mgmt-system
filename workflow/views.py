@@ -7,10 +7,13 @@
 from dataclasses import dataclass
 
 from django.contrib import messages
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
+from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
@@ -47,7 +50,15 @@ class Row:
 
     @property
     def todo(self):
-        return [o for o in self.offers if o.transition.action != "cancel"]
+        return [o for o in self.offers if o.pending]
+
+
+class PasswordChange(SuccessMessageMixin, auth_views.PasswordChangeView):
+    """کاربر رمز اولیه‌ای را که ادمین داده عوض می‌کند (ویوی آماده‌ی جنگو + قالب فرم خودمان)."""
+    template_name = "workflow/form.html"
+    success_url = reverse_lazy("dashboard")
+    success_message = "رمز عبور شما تغییر کرد."
+    extra_context = {"title": "تغییر رمز عبور", "submit_label": "ذخیره‌ی رمز جدید"}
 
 
 @login_required

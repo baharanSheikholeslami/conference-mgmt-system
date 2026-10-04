@@ -33,6 +33,17 @@ class AuthTests(PortalTestCase):
         self.assertRedirects(self.client.post(reverse("logout")), reverse("login"))
         self.assertEqual(self.client.get(reverse("dashboard")).status_code, 302)
 
+    def test_user_can_change_own_password(self):
+        self.login(self.student)
+        self.assertContains(self.client.get(reverse("dashboard")), reverse("password_change"))
+        response = self.client.post(reverse("password_change"), {
+            "old_password": "pass12345", "new_password1": "Ramz-e-taze-1405",
+            "new_password2": "Ramz-e-taze-1405"})
+        self.assertRedirects(response, reverse("dashboard"))
+        self.client.post(reverse("logout"))
+        self.assertFalse(self.client.login(username="student", password="pass12345"))
+        self.assertTrue(self.client.login(username="student", password="Ramz-e-taze-1405"))
+
     def test_unrelated_user_gets_404_for_case_and_file(self):
         case = self.to_referee_review()
         version = case.versions.get()
@@ -169,9 +180,19 @@ class FormFlowTests(PortalTestCase):
         case.refresh_from_db()
         self.assertEqual((case.state, case.defense_date), (State.DEFENSE_SCHEDULED, earliest))
 
+        # تا روز دفاع: دکمه‌ی نمره غیرفعال است و پرونده در «در انتظار اقدام» استاد راهنما نیست
         self.login(self.advisor)
-        self.assertContains(self.post_action(case, "record_result", grade="25"), "errorlist")
+        self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])),
+                            "ثبت نتیجه پیش از روز دفاع")
+        self.assertEqual(self.client.get(reverse("dashboard")).context["pending"], [])
         self.post_action(case, "record_result", grade="17.75")
+        case.refresh_from_db()
+        self.assertEqual(case.state, State.DEFENSE_SCHEDULED)
+
+        with self.on(earliest):                                       # روز دفاع
+            self.assertEqual(len(self.client.get(reverse("dashboard")).context["pending"]), 1)
+            self.assertContains(self.post_action(case, "record_result", grade="25"), "errorlist")
+            self.post_action(case, "record_result", grade="17.75")
         case.refresh_from_db()
         self.assertEqual((case.state, str(case.grade)), (State.COMPLETED, "17.75"))
 

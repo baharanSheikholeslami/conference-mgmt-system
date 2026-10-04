@@ -12,6 +12,7 @@
     {% if user.is_authenticated %}
       <div class="who">
         <span>{{ user }} <small>({{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %})</small></span>
+        <a href="{% url 'password_change' %}">تغییر رمز</a>
         {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
         <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">خروج</button></form>
       </div>
