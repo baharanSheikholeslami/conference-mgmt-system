@@ -1,0 +1,379 @@
+{
+  "id": "pm3RagAssistant02",
+  "name": "فاز ۳ — ۲. دستیار دانش آیین‌نامه (RAG)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## دستیار دانش بازیابی-افزوده (RAG)\n**پرسش:** `POST /webhook/rag-ask` ← بردار پرسش ← جست‌وجوی نزدیک‌ترین بندها در پایگاه دانش برداری پورتال (pgvector) ← پاسخ مدل زبانی فقط بر اساس همان بندها، با شماره‌ی مرجع.\n\n**نمایه‌سازی:** `POST /webhook/rag-embed` بردار معنایی قطعه‌های سند را به پورتال برمی‌گرداند (دستور `manage.py index_policy`).\n\nهر دو مسیر هم‌زمان پاسخ می‌دهند (پاسخ = خروجی آخرین گره).",
+        "height": 250,
+        "width": 640
+      },
+      "id": "fa98aaa0-d379-541e-a3f1-5fba63bd5c4c",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-ask",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "0f3e781a-8736-5f0c-904e-cde15646aa23",
+      "name": "Webhook Ask",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "f447dc08-99a4-518d-9a79-18b1a807ef57"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و آماده‌کردن درخواست embedding برای پرسش کاربر.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst question = String((req.body || {}).question || '').trim();\nif (!question) throw new Error('question is empty');\n\nreturn [{ json: { question, embed_request: { model: $env.EMBEDDING_MODEL, input: [question] } } }];"
+      },
+      "id": "50993daa-8685-52c8-9a26-4d1cb3849dc9",
+      "name": "Prepare Question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBEDDING_BASE_URL }}/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.EMBEDDING_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.embed_request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "28b3605b-e670-548d-a977-8851064037f4",
+      "name": "Embed Question",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — ساخت درخواست جست‌وجو در پایگاه دانش برداری پورتال (pgvector).\nconst res = $input.first().json;\nconst vector = res.data && res.data[0] && res.data[0].embedding;\nif (!Array.isArray(vector)) {\n  throw new Error('Embedding API returned no vector: ' + JSON.stringify(res).slice(0, 300));\n}\nreturn [{ json: { search_request: { embedding: vector, model: $env.EMBEDDING_MODEL, k: 5 } } }];"
+      },
+      "id": "006c17b7-49b1-5973-9b15-6481d9f1f671",
+      "name": "Search Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}/api/agents/rag/search/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.search_request) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "73e2b6ed-90e6-567a-8a65-d210ad92c129",
+      "name": "Search Knowledge Base",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۵ — ساخت پرامپت «فقط بر اساس بندهای بازیابی‌شده پاسخ بده».\nconst question = $('Prepare Question').first().json.question;\nconst chunks = $input.first().json.chunks || [];\n\nconst context = chunks\n  .map((c, i) => `[${i + 1}] (${c.doc}${c.ref ? ' — ' + c.ref : ''})\\n${c.text}`)\n  .join('\\n\\n');\n\nconst system = [\n  'تو دستیار پاسخ‌گویی به پرسش‌های آیین‌نامه‌ای پروژه‌ی کارشناسی در دانشگاه صنعتی امیرکبیر هستی.',\n  'فقط و فقط بر اساس «بندهای مرجع» که در پیام کاربر آمده پاسخ بده.',\n  'قواعد:',\n  '۱. پاسخ کوتاه، دقیق و به زبان فارسی باشد.',\n  '۲. پس از هر مطلبی که از یک بند گرفته‌ای، شماره‌ی همان بند را به شکل [1] یا [2] بیاور.',\n  '۳. اگر پاسخ در بندهای مرجع نیست، فقط بنویس: «در اسناد نمایه‌شده پاسخی برای این پرسش پیدا نکردم.» و چیزی از دانسته‌های خودت اضافه نکن.',\n  '۴. تصمیم اداری یا علمی نگیر و وعده نده؛ فقط متن آیین‌نامه را توضیح بده.',\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      question,\n      sources: chunks.map((c, i) => ({ n: i + 1, chunk_id: c.id, score: c.score })),\n      llm_request: {\n        model: $env.LLM_CHAT_MODEL,\n        temperature: 0,\n        stream: false,\n        messages: [\n          { role: 'system', content: system },\n          { role: 'user', content: `بندهای مرجع:\\n${context}\\n\\nپرسش: ${question}` },\n        ],\n      },\n    },\n  },\n];"
+      },
+      "id": "aa0b6746-5db2-57bd-b1af-724900d5b602",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "9d25b5ff-09bd-54a0-84c1-e27310204640",
+      "name": "LLM Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۷ — پاسخ نهایی برای پورتال: متن پاسخ + بندهای بازیابی‌شده (و این‌که کدام‌ها استناد شده‌اند).\nconst prompt = $('Build Prompt').first().json;\nconst res = $input.first().json;\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\nif (!content) throw new Error('LLM returned no answer: ' + JSON.stringify(res).slice(0, 300));\n\nconst FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';\nconst answer = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim();\nconst cited = new Set();\nfor (const m of answer.matchAll(/\\[([0-9۰-۹]+)\\]/g)) {\n  cited.add(Number(m[1].replace(/[۰-۹]/g, (d) => String(FA_DIGITS.indexOf(d)))));\n}\n\nreturn [\n  {\n    json: {\n      answer,\n      sources: prompt.sources.map((s) => ({ ...s, cited: cited.has(s.n) })),\n      model: $env.LLM_CHAT_MODEL,\n    },\n  },\n];"
+      },
+      "id": "536fe0f1-dac3-573e-bd08-48770b6ac00d",
+      "name": "Format Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-embed",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "8eaa5415-ea6c-5ecd-8a6f-0d3450dceedf",
+      "name": "Webhook Embed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        260
+      ],
+      "webhookId": "1bea15df-ef2c-5969-9067-032fdfd00c41"
+    },
+    {
+      "parameters": {
+        "jsCode": "// نمایه‌سازی: پورتال قطعه‌های سند را می‌فرستد تا بردار معنایی‌شان را بگیرد.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst texts = (req.body || {}).texts;\nif (!Array.isArray(texts) || !texts.length) throw new Error('texts must be a non-empty array');\n\nreturn [{ json: { embed_request: { model: $env.EMBEDDING_MODEL, input: texts.map(String) } } }];"
+      },
+      "id": "c8eca271-638b-5941-abf8-99b80e6b1aaa",
+      "name": "Prepare Texts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBEDDING_BASE_URL }}/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.EMBEDDING_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.embed_request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "4354d140-81de-51da-aa1a-a0d5cf526a70",
+      "name": "Embed Texts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        260
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// بردارها را به همان ترتیب متن‌های ورودی برمی‌گرداند.\nconst res = $input.first().json;\nif (!Array.isArray(res.data)) {\n  throw new Error('Embedding API returned no vectors: ' + JSON.stringify(res).slice(0, 300));\n}\nconst vectors = res.data\n  .slice()\n  .sort((a, b) => (a.index || 0) - (b.index || 0))\n  .map((d) => d.embedding);\n\nreturn [{ json: { model: $env.EMBEDDING_MODEL, vectors } }];"
+      },
+      "id": "beddb228-c8d3-52a5-a42a-8a203957a222",
+      "name": "Format Vectors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Ask": {
+      "main": [
+        [
+          {
+            "node": "Prepare Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Question": {
+      "main": [
+        [
+          {
+            "node": "Embed Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Question": {
+      "main": [
+        [
+          {
+            "node": "Search Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Request": {
+      "main": [
+        [
+          {
+            "node": "Search Knowledge Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Knowledge Base": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Answer": {
+      "main": [
+        [
+          {
+            "node": "Format Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Embed": {
+      "main": [
+        [
+          {
+            "node": "Prepare Texts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Texts": {
+      "main": [
+        [
+          {
+            "node": "Embed Texts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Texts": {
+      "main": [
+        [
+          {
+            "node": "Format Vectors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

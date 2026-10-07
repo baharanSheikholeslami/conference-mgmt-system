@@ -17,6 +17,8 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
+from agents import services as agents
+
 from . import forms, rules, services
 from .enums import DocKind, State
 from .models import DocumentVersion
@@ -191,4 +193,6 @@ def case_action(request, pk, action):
             return redirect("case_detail", pk=case.pk)
     return render(request, "workflow/form.html", {
         "form": form, "case": case, "title": t.label, "submit_label": "ثبت",
-        "danger": action in ("cancel", "group_reject", "council_reject")})
+        "danger": action in ("cancel", "group_reject", "council_reject"),
+        # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم تخصیص داور (فقط نمایش؛ انتخاب با مدیر گروه است)
+        "suggestions": agents.suggestion_panel(case) if action == "assign_referees" else None})

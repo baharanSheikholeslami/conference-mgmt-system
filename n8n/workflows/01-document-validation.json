@@ -1,0 +1,181 @@
+{
+  "id": "pm3DocValidation1",
+  "name": "فاز ۳ — ۱. اعتبارسنجی سند پیشنهاد",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## عامل اعتبارسنجی سند\nپورتال پس از بارگذاری هر نسخه‌ی پیشنهاد، متن استخراج‌شده و چک‌لیست قالب را به `POST /webhook/validate-proposal` می‌فرستد.\n\nمتن به چند تکه شکسته می‌شود، مدل زبانی برای هر تکه می‌گوید کدام موارد چک‌لیست را (با نقل‌قول از متن) می‌بیند، نقل‌قول‌ها راستی‌آزمایی و نتیجه‌ها تجمیع می‌شوند و به پورتال برمی‌گردند.\n\n**این عامل فقط بازخورد می‌دهد و هیچ اقدامی روی پرونده ثبت نمی‌کند.**",
+        "height": 250,
+        "width": 640
+      },
+      "id": "d54768d7-ba38-59ad-8dd6-ca6d1e2c793f",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "validate-proposal",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1b459dc9-8213-5b45-bef3-14d1c5c07b77",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "f1499efb-6516-591d-96b4-54b97100bfa2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و تکه‌تکه‌کردن متن سند.\n// متن پیشنهاد معمولاً از پنجره‌ی ورودی مدل‌های محلی بزرگ‌تر است؛ پس آن را به چند «تکه» با\n// هم‌پوشانی می‌شکنیم و هر تکه را جدا از مدل می‌پرسیم (الگوی map-reduce).\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst body = req.body || {};\nconst text = String((body.document || {}).text || '');\nconst checklist = Array.isArray(body.checklist) ? body.checklist : [];\nconst SIZE = Number($env.VALIDATION_WINDOW_CHARS) || 4000;\nconst OVERLAP = 500;\n\nconst windows = [];\nfor (let start = 0; start < text.length; start += SIZE - OVERLAP) {\n  windows.push(text.slice(start, start + SIZE));\n  if (start + SIZE >= text.length) break;\n}\n\nconst list = checklist\n  .map((i) => `- ${i.key} (${i.group === 'field' ? 'فیلد' : 'بخش'}): ${i.label} — ${i.hint}`)\n  .join('\\n');\n\nconst system = [\n  'تو دستیار بررسی «قالب» فرم پیشنهاد پروژه‌ی کارشناسی دانشکده‌ی مهندسی کامپیوتر دانشگاه صنعتی امیرکبیر هستی.',\n  'ورودی: فهرست موارد الزامی فرم و «یک تکه» از متن استخراج‌شده‌ی سند.',\n  'وظیفه: مشخص کن کدام موارد فهرست در «همین تکه» وجود دارند.',\n  'قواعد:',\n  '۱. یک «بخش» فقط وقتی وجود دارد که عنوان آن (یا عنوانی هم‌معنا) در متن آمده و زیر آن دست‌کم یک جمله محتوا نوشته شده باشد.',\n  '۲. یک «فیلد» فقط وقتی وجود دارد که مقدارش پر شده باشد؛ برچسبِ بدون مقدار یعنی خالی.',\n  '۳. برای هر مورد یافت‌شده، evidence را عیناً و بدون هیچ تغییری از متن رونویسی کن (حداکثر ۱۲ واژه).',\n  '۴. درباره‌ی کیفیت علمی نظر نده و حدس نزن؛ اگر مطمئن نیستی آن مورد را نیاور.',\n  'خروجی فقط یک شیء JSON با همین شکل باشد و هیچ متن دیگری ننویس:',\n  '{\"found\": [{\"key\": \"<کلید مورد>\", \"evidence\": \"<نقل‌قول عینی از متن>\"}]}',\n].join('\\n');\n\nreturn windows.map((windowText, index) => ({\n  json: {\n    validation_id: body.validation_id,\n    window_index: index,\n    window_count: windows.length,\n    window_text: windowText,\n    keys: checklist.map((i) => i.key),\n    llm_request: {\n      model: $env.LLM_CHAT_MODEL,\n      temperature: 0,\n      stream: false,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: system },\n        {\n          role: 'user',\n          content: `موارد الزامی:\\n${list}\\n\\nمتن سند (تکه‌ی ${index + 1} از ${windows.length}):\\n\"\"\"\\n${windowText}\\n\"\"\"`,\n        },\n      ],\n    },\n  },\n}));"
+      },
+      "id": "72317d6d-44bf-5cd0-a888-e48a695c8ead",
+      "name": "Split Into Windows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "0dc2f4cc-458d-5eb8-975b-e5cb9f790e00",
+      "name": "LLM Check Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — تجمیع پاسخ تکه‌ها و «راستی‌آزمایی شاهد».\n// مدل برای هر مورد باید نقل‌قولی از متن بیاورد؛ اگر آن نقل‌قول واقعاً در همان تکه نباشد،\n// ادعای مدل پذیرفته نمی‌شود (کاهش خطای توهم مدل زبانی).\nconst windows = $('Split Into Windows').all();\nconst responses = $input.all();\n\nconst FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';\nconst norm = (s) =>\n  String(s || '')\n    .normalize('NFKC')\n    .replace(/[\\u200c\\u200e\\u200f\\u0640\\u064b-\\u065f]/g, '')\n    .replace(/[يى]/g, 'ی')\n    .replace(/ك/g, 'ک')\n    .replace(/[۰-۹]/g, (d) => String(FA_DIGITS.indexOf(d)))\n    .replace(/[^\\p{L}\\p{N}]+/gu, ' ')\n    .trim()\n    .toLowerCase();\n\nfunction supported(evidence, windowText) {\n  const e = norm(evidence);\n  if (e.length < 3) return false;\n  const w = norm(windowText);\n  if (w.includes(e)) return true;\n  const have = new Set(w.split(' '));\n  const words = e.split(' ').filter((x) => x.length >= 2);\n  if (!words.length) return false;\n  return words.filter((x) => have.has(x)).length / words.length >= 0.7;\n}\n\nfunction parseJson(content) {\n  const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n  const start = clean.indexOf('{');\n  const end = clean.lastIndexOf('}');\n  if (start < 0 || end <= start) throw new Error('no JSON object');\n  return JSON.parse(clean.slice(start, end + 1));\n}\n\nconst found = {};\nconst unverified = {};\nlet failed = 0;\nlet lastError = '';\n\nresponses.forEach((item, i) => {\n  const w = windows[i].json;\n  const res = item.json || {};\n  const content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\n  let parsed = null;\n  if (content) {\n    try {\n      parsed = parseJson(content);\n    } catch (e) {\n      lastError = 'خروجی مدل JSON معتبر نبود';\n    }\n  } else {\n    const err = res.error;\n    lastError = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'پاسخ خالی از مدل';\n  }\n  if (!parsed || !Array.isArray(parsed.found)) {\n    failed += 1;\n    return;\n  }\n  for (const f of parsed.found) {\n    if (!f || !w.keys.includes(f.key)) continue;\n    const row = { key: f.key, evidence: String(f.evidence || '').slice(0, 200), window: i + 1 };\n    if (supported(f.evidence, w.window_text)) {\n      if (!found[f.key]) found[f.key] = row;\n    } else if (!unverified[f.key]) {\n      unverified[f.key] = row;\n    }\n  }\n});\n\nconst model = $env.LLM_CHAT_MODEL;\nconst result =\n  failed === windows.length\n    ? { error: 'مدل زبانی پاسخ قابل‌استفاده‌ای نداد.', detail: String(lastError).slice(0, 300), model }\n    : {\n        found: Object.values(found),\n        unverified: Object.values(unverified).filter((u) => !found[u.key]),\n        windows: windows.length,\n        failed_windows: failed,\n        model,\n      };\n\nreturn [{ json: { validation_id: windows[0].json.validation_id, result } }];"
+      },
+      "id": "dec33406-dd64-52f7-b0bc-4707852f150d",
+      "name": "Aggregate And Verify",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}/api/agents/validations/{{ $json.validation_id }}/result/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "da0ee6bc-690b-514c-8b6a-68a064ba5432",
+      "name": "Send Result To Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Split Into Windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Windows": {
+      "main": [
+        [
+          {
+            "node": "LLM Check Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Check Window": {
+      "main": [
+        [
+          {
+            "node": "Aggregate And Verify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate And Verify": {
+      "main": [
+        [
+          {
+            "node": "Send Result To Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

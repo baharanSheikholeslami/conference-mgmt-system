@@ -1,0 +1,389 @@
+{
+  "id": "pm3Notifications04",
+  "name": "فاز ۳ — ۴. اطلاع‌رسانی و یادآوری مهلت",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## محرک اطلاع‌رسانی (ایمیل یک‌طرفه)\nسه ورودی، یک مسیر مشترک:\n- **تغییر وضعیت پرونده:** `POST /webhook/notify-event` (پورتال گیرندگان را تعیین کرده است)\n- **یادآوری مهلت:** هر روز ساعت ۸ فهرست یادآوری‌های سررسیدشده از پورتال گرفته می‌شود (قواعد مهلت در خود پورتال است)\n- **اجرای دستی یادآوری:** `POST /webhook/run-reminders` (دستور `manage.py run_reminders`)\n\nمدل زبانی فقط جمله‌بندی پیام را می‌نویسد؛ اگر پاسخ نداد متن ثابت پشتیبان فرستاده می‌شود. نتیجه‌ی هر ارسال در پورتال ثبت می‌شود. **پاسخ به این ایمیل‌ها هیچ اقدامی ثبت نمی‌کند.**",
+        "height": 290,
+        "width": 700
+      },
+      "id": "33ae8445-67e9-502c-9d72-21fd422b48da",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -340
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notify-event",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "22fa9b50-ecd7-59d8-8cfb-eece2172159a",
+      "name": "Webhook Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "14f83c8c-9f1b-5f7e-9cab-767606d47639"
+    },
+    {
+      "parameters": {
+        "jsCode": "// مسیر «تغییر وضعیت»: پورتال فهرست اعلان‌ها (یک مورد برای هر گیرنده) را فرستاده است.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst notifications = (req.body || {}).notifications;\nreturn (Array.isArray(notifications) ? notifications : []).map((n) => ({ json: n }));"
+      },
+      "id": "57f75383-fa64-5af1-9cbe-5b761b4f8bb3",
+      "name": "Event Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "171506d1-6a21-51c1-978f-22f4087210fe",
+      "name": "Every Day 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "run-reminders",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "463417a2-66cb-5938-9fd8-1a4d971399d8",
+      "name": "Webhook Run Reminders",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        420
+      ],
+      "webhookId": "140a6d56-9e25-509e-9ca1-67a22bd197e4"
+    },
+    {
+      "parameters": {
+        "jsCode": "// مسیر «اجرای دستی یادآوری‌ها» (دستور run_reminders پورتال): بررسی توکن و تاریخ شبیه‌سازی‌شده.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst today = String((req.body || {}).today || '');\nif (today && !/^\\d{4}-\\d{2}-\\d{2}$/.test(today)) throw new Error('today must be YYYY-MM-DD');\nreturn [{ json: { today } }];"
+      },
+      "id": "12289590-a6e5-5b0a-bb81-bcec018e34fd",
+      "name": "Check Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.PORTAL_URL }}/api/agents/reminders/due/{{ $json.today ? '?today=' + $json.today : '' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "9d66516d-d72c-5250-93b3-aee61bb3dd87",
+      "name": "Fetch Due Reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// مسیر «یادآوری مهلت»: پورتال با قواعد قطعی گفته امروز چه یادآوری‌هایی سررسید شده است.\nconst notifications = $input.first().json.notifications;\nreturn (Array.isArray(notifications) ? notifications : []).map((n) => ({ json: n }));"
+      },
+      "id": "2c24c49b-ac0b-539d-8856-9408ac17c28f",
+      "name": "Reminder Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// برای هر اعلان یک درخواست به مدل زبانی می‌سازد. مدل فقط «لحن و جمله‌بندی» را می‌نویسد؛\n// همه‌ی واقعیت‌ها (نام، وضعیت، تاریخ، مهلت) را پورتال داده است.\nconst system = [\n  'تو نویسنده‌ی اعلان‌های سامانه‌ی مدیریت پروژه‌ی کارشناسی دانشگاه هستی.',\n  'با استفاده از «واقعیت‌ها» یک پیام کوتاه (حداکثر ۴ جمله)، رسمی و مؤدبانه به فارسی برای گیرنده بنویس.',\n  'قواعد:',\n  '۱. پیام را با «<نام گیرنده> گرامی،» شروع کن.',\n  '۲. فقط از واقعیت‌های داده‌شده استفاده کن؛ هیچ تاریخ، مهلت، نام، عدد یا وعده‌ای از خودت اضافه نکن.',\n  '۳. اگر your_actions خالی نیست، روشن بگو چه اقدامی از گیرنده انتظار می‌رود؛ اگر خالی است، بگو پیام فقط برای اطلاع است.',\n  '۴. پیوند، امضا و جمله‌ی «به این پیام پاسخ ندهید» ننویس؛ سامانه خودش اضافه می‌کند.',\n  'خروجی فقط متن پیام باشد، بدون عنوان و بدون توضیح اضافه.',\n].join('\\n');\n\nreturn $input.all().map((item) => ({\n  json: {\n    ...item.json,\n    llm_request: {\n      model: $env.LLM_CHAT_MODEL,\n      temperature: 0.3,\n      stream: false,\n      messages: [\n        { role: 'system', content: system },\n        { role: 'user', content: 'واقعیت‌ها:\\n' + JSON.stringify(item.json.facts, null, 2) },\n      ],\n    },\n  },\n}));"
+      },
+      "id": "0e47b62c-f860-5e16-a28c-54bb30d66306",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        110
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "9e10e71d-57d1-599e-8fa0-3bd3595d1427",
+      "name": "LLM Compose",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        110
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// متن نهایی ایمیل: نوشته‌ی مدل زبانی (اگر سالم و کوتاه باشد) وگرنه متن ثابت پشتیبانِ پورتال،\n// به‌اضافه‌ی پانویس ثابت (پیوند پورتال + «پاسخ ندهید»). پس خرابی مدل جلوی اطلاع‌رسانی را نمی‌گیرد.\nconst prepared = $('Build Prompt').all();\n\nreturn $input.all().map((item, i) => {\n  const n = prepared[i].json;\n  const res = item.json || {};\n  const content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\n  let text = content ? String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '').trim() : '';\n  const usable = text.length >= 20 && text.length <= 1200;\n  if (!usable) text = n.fallback_body;\n  return {\n    json: {\n      key: n.key,\n      to: n.to,\n      subject: n.subject,\n      body: `${text}\\n\\n${n.footer}`,\n      generated_by: usable ? 'llm' : 'template',\n    },\n  };\n});"
+      },
+      "id": "f75c7654-a9f6-5207-91dc-ed712971b274",
+      "name": "Finalize Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        110
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.MAIL_FROM }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "40dee92c-a2e0-5340-ba76-a34e20da4a08",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        110
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "pm3SmtpMailpit01",
+          "name": "Portal SMTP (Mailpit)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}/api/agents/notifications/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ key: $('Finalize Message').all()[$itemIndex].json.key, status: 'sent', subject: $('Finalize Message').all()[$itemIndex].json.subject, body: $('Finalize Message').all()[$itemIndex].json.body, generated_by: $('Finalize Message').all()[$itemIndex].json.generated_by }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "b39a01d8-abb7-5c82-9a0c-b449d64f0698",
+      "name": "Record In Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        110
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook Event": {
+      "main": [
+        [
+          {
+            "node": "Event Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Event Items": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Day 08:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Reminders": {
+      "main": [
+        [
+          {
+            "node": "Reminder Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reminder Items": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Run Reminders": {
+      "main": [
+        [
+          {
+            "node": "Check Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Token": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Compose",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Compose": {
+      "main": [
+        [
+          {
+            "node": "Finalize Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Message": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Record In Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

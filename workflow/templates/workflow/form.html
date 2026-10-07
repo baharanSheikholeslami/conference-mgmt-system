@@ -4,6 +4,7 @@
 {% block content %}
 {% if case %}<a class="crumb" href="{% url 'case_detail' case.pk %}">→ بازگشت به پرونده</a>
 {% else %}<a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>{% endif %}
+{% if suggestions %}{% include "agents/_suggestions.html" with run=suggestions.run rows=suggestions.rows %}{% endif %}
 <div class="card">
   <h1>{{ title }}</h1>
   {% if case %}<p class="muted">{{ case.title_fa }} — <span class="badge plain">{{ case.get_state_display }}</span></p>{% endif %}

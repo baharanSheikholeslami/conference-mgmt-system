@@ -10,6 +10,9 @@ from datetime import date
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from django.db.models import Case, IntegerField, When
+
+from agents import services as agents
 
 from . import rules, services
 from .enums import ReviewDecision
@@ -117,7 +120,16 @@ class AssignRefereesForm(ActionForm):
     def setup(self):
         field = self.fields["referees"]
         field.queryset = services.eligible_referees(self.case)
-        field.label_from_instance = lambda u: f"{u}" + (f" — {u.expertise}" if u.expertise else "")
+        # فاز ۳: اگر عامل پیشنهاد داور رتبه‌بندی داده باشد، فهرست به همان ترتیب نمایش داده می‌شود.
+        # هیچ گزینه‌ای از پیش انتخاب نمی‌شود؛ تصمیم با مدیر گروه است.
+        ranks = agents.suggestion_ranks(self.case)
+        if ranks:
+            order = Case(*[When(pk=pk, then=rank) for pk, rank in ranks.items()],
+                         default=len(ranks) + 1, output_field=IntegerField())
+            field.queryset = field.queryset.order_by(order, "last_name", "first_name")
+        field.label_from_instance = lambda u: (
+            f"{u}" + (f" — {u.expertise}" if u.expertise else "")
+            + (f" (پیشنهاد سامانه: رتبه‌ی {fa_digits(ranks[u.pk])})" if u.pk in ranks else ""))
         field.help_text = (f"حداقل {fa_digits(self.case.required_referees)} داور از اعضای گروه "
                            f"{self.case.department} انتخاب کنید.")
 

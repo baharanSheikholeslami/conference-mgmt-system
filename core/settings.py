@@ -29,7 +29,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()]
+# n8n از درون کانتینر داکر، پورتال را با همین نام می‌بیند (فاز ۳)
+ALLOWED_HOSTS.append("host.docker.internal")
 
 
 # Application definition
@@ -41,7 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'workflow'
+    'workflow',
+    'agents',
 ]
 
 MIDDLEWARE = [
@@ -124,6 +127,13 @@ TIME_ZONE = 'Asia/Tehran'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
+
+# لایه‌ی عامل‌های هوش مصنوعی در n8n (فاز ۳) — جزئیات در docs/phase3.md
+# با AGENTS_ENABLED=False پورتال دقیقاً مثل فاز ۲ و بدون هیچ تماسی با n8n کار می‌کند.
+AGENTS_ENABLED = os.getenv("AGENTS_ENABLED", "False") == "True"
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678/webhook").rstrip("/")
+AGENT_TOKEN = os.getenv("AGENT_TOKEN", "")          # راز مشترک پورتال و n8n (سرآیند X-Agent-Token)
+PORTAL_PUBLIC_URL = os.getenv("PORTAL_PUBLIC_URL", "http://localhost:8000").rstrip("/")  # پیوند داخل ایمیل‌ها
 
 # فایل‌های بارگذاری‌شده فقط از طریق ویوی document_download (با کنترل دسترسی) سرو می‌شوند
 MEDIA_URL = 'media/'

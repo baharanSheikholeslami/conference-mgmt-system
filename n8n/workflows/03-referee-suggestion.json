@@ -1,0 +1,249 @@
+{
+  "id": "pm3RefereeSuggest3",
+  "name": "فاز ۳ — ۳. پیشنهاد داور",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## عامل پیشنهاد داور\nوقتی پرونده به «در انتظار تخصیص داور» می‌رسد، پورتال موضوع پیشنهاد و فهرست داوران واجد شرایط (اعضای همان گروه، غیر از راهنما و نویسنده) را به `POST /webhook/suggest-referees` می‌فرستد.\n\nموضوع و تخصص هر استاد به بردار معنایی تبدیل، با شباهت کسینوسی رتبه‌بندی و برای نفرات برتر یک توجیه یک‌جمله‌ای نوشته می‌شود.\n\n**خروجی فقط یک فهرست پیشنهادی برای مدیر گروه است؛ تخصیص داور را خود او انجام می‌دهد.**",
+        "height": 250,
+        "width": 640
+      },
+      "id": "0dfb8156-65a3-552f-a23d-5d971f7f4805",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "suggest-referees",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "ed6ba605-01f1-5c55-8d72-32fefb50658c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "998357b7-f469-507a-8a95-78be122a8ba3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و آماده‌کردن یک درخواست embedding برای «موضوع پیشنهاد + تخصص هر استاد».\n// فهرست candidates را پورتال با قواعد قطعی ساخته است (عضو همان گروه، غیر از راهنما و نویسنده).\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst body = req.body || {};\nconst candidates = Array.isArray(body.candidates) ? body.candidates : [];\nconst withProfile = candidates.filter((c) => String(c.expertise || '').trim());\nconst withoutProfile = candidates.filter((c) => !String(c.expertise || '').trim());\nconst query = String(body.query_text || '').slice(0, 6000);\n\nreturn [\n  {\n    json: {\n      run_id: body.run_id,\n      case: body.case || {},\n      query_text: query,\n      explain_top: Number(body.explain_top) || 5,\n      with_profile: withProfile,\n      without_profile: withoutProfile,\n      embed_request: {\n        model: $env.EMBEDDING_MODEL,\n        input: [query, ...withProfile.map((c) => String(c.expertise))],\n      },\n    },\n  },\n];"
+      },
+      "id": "7ee98ca3-52d2-5d3e-9dfd-19a0297dac98",
+      "name": "Prepare Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.EMBEDDING_BASE_URL }}/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.EMBEDDING_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.embed_request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "205e4e58-96cf-5a62-bb82-382071885b57",
+      "name": "Embed Topic And Profiles",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — رتبه‌بندی با شباهت کسینوسی و ساخت پرامپت «توجیه یک‌جمله‌ای» برای نفرات برتر.\nconst prep = $('Prepare Candidates').first().json;\nconst res = $input.first().json;\n\nif (!Array.isArray(res.data) || res.data.length !== prep.with_profile.length + 1) {\n  const err = res.error;\n  const detail = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'پاسخ ناقص';\n  return [{ json: { run_id: prep.run_id, error: 'مدل embedding پاسخ نداد.', detail: String(detail).slice(0, 300) } }];\n}\n\nconst vectors = res.data\n  .slice()\n  .sort((a, b) => (a.index || 0) - (b.index || 0))\n  .map((d) => d.embedding);\n\nfunction cosine(a, b) {\n  let dot = 0;\n  let na = 0;\n  let nb = 0;\n  for (let i = 0; i < a.length; i += 1) {\n    dot += a[i] * b[i];\n    na += a[i] * a[i];\n    nb += b[i] * b[i];\n  }\n  return na && nb ? dot / Math.sqrt(na * nb) : 0;\n}\n\nconst scored = prep.with_profile\n  .map((c, i) => ({ id: c.id, name: c.name, expertise: c.expertise, score: Math.round(cosine(vectors[0], vectors[i + 1]) * 10000) / 10000 }))\n  .sort((a, b) => b.score - a.score);\n\nconst top = scored.slice(0, prep.explain_top);\nconst system = [\n  'تو دستیار مدیر گروه برای انتخاب داور پیشنهاد پروژه‌ی کارشناسی هستی.',\n  'برای هر استادِ فهرست، در «یک جمله‌ی کوتاه فارسی» بنویس تخصص او چه ارتباطی با موضوع پروژه دارد.',\n  'قواعد:',\n  '۱. فقط از متن «تخصص» همان استاد استفاده کن و هیچ سابقه یا ویژگی دیگری از خودت نساز.',\n  '۲. اگر ارتباط کم است، همین را صادقانه بنویس.',\n  '۳. درباره‌ی این‌که چه کسی باید انتخاب شود نظر نده؛ تصمیم با مدیر گروه است.',\n  'خروجی فقط یک شیء JSON با همین شکل باشد:',\n  '{\"reasons\": [{\"id\": <شناسه‌ی عددی استاد>, \"reason\": \"<یک جمله>\"}]}',\n].join('\\n');\nconst user = [\n  `موضوع پروژه:\\n${prep.query_text.slice(0, 1500)}`,\n  'استادان:',\n  ...top.map((c) => `- id=${c.id} | ${c.name} | تخصص: ${c.expertise}`),\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      run_id: prep.run_id,\n      scored,\n      llm_request: {\n        model: $env.LLM_CHAT_MODEL,\n        temperature: 0,\n        stream: false,\n        response_format: { type: 'json_object' },\n        messages: [\n          { role: 'system', content: system },\n          { role: 'user', content: user },\n        ],\n      },\n    },\n  },\n];"
+      },
+      "id": "26983e5f-b52c-53a8-bc4d-46e36233fbd7",
+      "name": "Rank By Similarity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "dc2f6d05-7f2a-55db-952b-221db7607575",
+      "name": "LLM Explain",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۵ — ترکیب امتیازها با توجیه‌های مدل. اگر مدل توجیه نداد، رتبه‌بندی بدون توجیه برمی‌گردد.\nconst prep = $('Prepare Candidates').first().json;\nconst rank = $('Rank By Similarity').first().json;\nif (rank.error) {\n  return [{ json: { run_id: rank.run_id, result: { error: rank.error, detail: rank.detail } } }];\n}\n\nconst res = $input.first().json;\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\nconst reasons = {};\nif (content) {\n  try {\n    const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n    const parsed = JSON.parse(clean.slice(clean.indexOf('{'), clean.lastIndexOf('}') + 1));\n    for (const r of parsed.reasons || []) {\n      if (r && r.reason) reasons[Number(r.id)] = String(r.reason).trim().slice(0, 400);\n    }\n  } catch (e) {\n    // توجیه اختیاری است؛ رتبه‌بندی همچنان معتبر است\n  }\n}\n\nconst suggestions = [\n  ...rank.scored.map((c) => ({ referee_id: c.id, score: c.score, reason: reasons[c.id] || '' })),\n  ...prep.without_profile.map((c) => ({\n    referee_id: c.id,\n    score: null,\n    reason: 'زمینه‌ی تخصصی این استاد در سامانه ثبت نشده است؛ رتبه‌بندی معنایی برای او ممکن نبود.',\n  })),\n];\n\nreturn [\n  {\n    json: {\n      run_id: rank.run_id,\n      result: { suggestions, model: `${$env.EMBEDDING_MODEL} + ${$env.LLM_CHAT_MODEL}` },\n    },\n  },\n];"
+      },
+      "id": "fa3ca64a-95b7-56aa-acb8-03b03cac4b8b",
+      "name": "Build Suggestions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}/api/agents/referee-suggestions/{{ $json.run_id }}/result/",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "45ebc6ae-825a-55ea-9369-7665bd28f246",
+      "name": "Send Result To Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Candidates": {
+      "main": [
+        [
+          {
+            "node": "Embed Topic And Profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Topic And Profiles": {
+      "main": [
+        [
+          {
+            "node": "Rank By Similarity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rank By Similarity": {
+      "main": [
+        [
+          {
+            "node": "LLM Explain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Explain": {
+      "main": [
+        [
+          {
+            "node": "Build Suggestions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Suggestions": {
+      "main": [
+        [
+          {
+            "node": "Send Result To Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
