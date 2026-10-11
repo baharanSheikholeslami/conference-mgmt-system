@@ -1,6 +1,7 @@
 services:
   db:
-    image: postgres:16
+    # همان Postgres 16 به‌اضافه‌ی افزونه‌ی pgvector (پایگاه دانش برداری RAG — فاز ۳)
+    image: pgvector/pgvector:pg16
     restart: always
     environment:
       POSTGRES_DB: conference_db
@@ -18,8 +19,33 @@ services:
       - "5678:5678"
     environment:
       - N8N_SECURE_COOKIE=false
+      - GENERIC_TIMEZONE=Asia/Tehran
+      - TZ=Asia/Tehran
+      # گردش‌کارها تنظیماتشان را با $env می‌خوانند؛ در n8n نسخه‌ی ۲ این دسترسی پیش‌فرض بسته است
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # ── مقادیر زیر از فایل .env کنار همین فایل خوانده می‌شوند (docs/phase3.md) ──
+      - AGENT_TOKEN=${AGENT_TOKEN:?AGENT_TOKEN را در فایل .env تنظیم کنید}
+      - PORTAL_URL=${PORTAL_INTERNAL_URL:-http://host.docker.internal:8000}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-ollama}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-gemma3:4b}
+      - EMBEDDING_BASE_URL=${EMBEDDING_BASE_URL:-${LLM_BASE_URL:-http://host.docker.internal:11434/v1}}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-${LLM_API_KEY:-ollama}}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-bge-m3}
+      - MAIL_FROM=${MAIL_FROM:-portal@example.com}
+      - VALIDATION_WINDOW_CHARS=${VALIDATION_WINDOW_CHARS:-4000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # روی مک لازم نیست؛ برای اجرا روی لینوکس
     volumes:
       - n8n_data:/home/node/.n8n
+      - ./n8n:/project/n8n:ro                 # گردش‌کارها و اعتبارنامه‌ی آماده برای import
+
+  mailpit:
+    # صندوق ایمیل آزمایشی: n8n ایمیل‌ها را این‌جا می‌فرستد و در http://localhost:8025 دیده می‌شوند
+    image: axllent/mailpit:latest
+    restart: always
+    ports:
+      - "8025:8025"
 
 volumes:
   pgdata:

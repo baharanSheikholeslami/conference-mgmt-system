@@ -1,0 +1,1242 @@
+{
+  "live": true,
+  "start": "2026-10-11",
+  "scenarios": [
+    {
+      "key": "happy_path",
+      "title": "مسیر کامل دانشجو بدون بازگشت",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "happy_path",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "happy_path",
+          "action": "advisor_suggest",
+          "expected": "انجام شود",
+          "got": "درخواست شد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "happy_path",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "happy_path",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "happy_path",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-17",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-19",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-31",
+          "actor": "ref_ai",
+          "action": "submit_review",
+          "expected": "در انتظار تصویب گروه",
+          "got": "در انتظار تصویب گروه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-05",
+          "actor": "head",
+          "action": "group_approve",
+          "expected": "در انتظار تصویب شورای دانشکده",
+          "got": "در انتظار تصویب شورای دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-10",
+          "actor": "edu",
+          "action": "council_approve",
+          "expected": "در حال اجرای پروژه",
+          "got": "در حال اجرای پروژه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-19",
+          "actor": "happy_path",
+          "action": "upload_thesis",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-19",
+          "actor": "happy_path",
+          "action": "submit_thesis",
+          "expected": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "got": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-22",
+          "actor": "advisor",
+          "action": "thesis_approve",
+          "expected": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "got": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-24",
+          "actor": "edu",
+          "action": "schedule_defense",
+          "expected": "زمان و مکان دفاع تعیین شد",
+          "got": "زمان و مکان دفاع تعیین شد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-02-17",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "تکمیل‌شده",
+          "got": "تکمیل‌شده",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "پیشنهاد استاد راهنما",
+          "expected": "رتبه‌ی ۱: advisor",
+          "got": "رتبه‌ی ۱: advisor",
+          "match": true,
+          "seconds": 6.0662238340009935,
+          "detail": "ترتیب: advisor، advisor1، ref_ai، referee1، ref_db، head، referee2، head1، ref_net"
+        },
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 2.0112768330145627,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 12 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: ref_ai",
+          "got": "رتبه‌ی ۱: ref_ai",
+          "match": true,
+          "seconds": 8.0220181249897,
+          "detail": "ترتیب: ref_ai، ref_db، head، ref_net"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "20 اعلان ارسال شود",
+          "got": "20 ارسال شد",
+          "match": true,
+          "seconds": 14.096531916991808,
+          "detail": "متن مدل زبانی: 20، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "revision_loop",
+      "title": "دو بار بازگشت: استاد راهنما و داور",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "revision_loop",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "revision_loop",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-14",
+          "actor": "revision_loop",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (no_evaluation)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-14",
+          "actor": "revision_loop",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-16",
+          "actor": "advisor",
+          "action": "advisor_return",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-19",
+          "actor": "revision_loop",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 2 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-19",
+          "actor": "revision_loop",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-20",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-21",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-23",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-10",
+          "actor": "ref_db",
+          "action": "submit_review",
+          "expected": "نیازمند اصلاح توسط دانشجو",
+          "got": "نیازمند اصلاح توسط دانشجو",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-11",
+          "actor": "revision_loop",
+          "action": "resubmit_proposal",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "ابتدا نسخه‌ی اصلاح‌شده‌ی پیشنهاد را بارگذاری کنید."
+        },
+        {
+          "day": "2026-11-15",
+          "actor": "revision_loop",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 3 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-15",
+          "actor": "revision_loop",
+          "action": "resubmit_proposal",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-20",
+          "actor": "ref_db",
+          "action": "submit_review",
+          "expected": "در انتظار تصویب گروه",
+          "got": "در انتظار تصویب گروه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-22",
+          "actor": "head",
+          "action": "group_approve",
+          "expected": "در انتظار تصویب شورای دانشکده",
+          "got": "در انتظار تصویب شورای دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-25",
+          "actor": "edu",
+          "action": "council_approve",
+          "expected": "در حال اجرای پروژه",
+          "got": "در حال اجرای پروژه",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "ناقص: evaluation",
+          "got": "ناقص: advisor_name، approach، evaluation، introduction، references، related_work، resources، schedule، student_email، student_name، student_number، term",
+          "match": false,
+          "seconds": 2.011974833003478,
+          "detail": "تشخیص درست 1 از 1 نقص؛ 11 هشدار نادرست"
+        },
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، introduction، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 4.0143544579914305,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 13 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: ref_db",
+          "got": "رتبه‌ی ۱: ref_db",
+          "match": true,
+          "seconds": 8.032620000012685,
+          "detail": "ترتیب: ref_db، ref_ai، head، ref_net"
+        },
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، introduction، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 4.0175814170215745,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 13 هشدار نادرست"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "18 اعلان ارسال شود",
+          "got": "18 ارسال شد",
+          "match": true,
+          "seconds": 8.030148208985338,
+          "detail": "متن مدل زبانی: 18، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "non_student",
+      "title": "نویسنده غیردانشجو: دو داور و بدون نمره",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "non_student",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "non_student",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "non_student",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "non_student",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-14",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "برای این پرونده حداقل ۲ داور لازم است."
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-21",
+          "actor": "ref_ai",
+          "action": "submit_review",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-23",
+          "actor": "ref_db",
+          "action": "submit_review",
+          "expected": "در انتظار تصویب گروه",
+          "got": "در انتظار تصویب گروه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-25",
+          "actor": "head",
+          "action": "group_approve",
+          "expected": "در انتظار تصویب شورای دانشکده",
+          "got": "در انتظار تصویب شورای دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-26",
+          "actor": "edu",
+          "action": "council_approve",
+          "expected": "در حال اجرای پروژه",
+          "got": "در حال اجرای پروژه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-09",
+          "actor": "non_student",
+          "action": "upload_thesis",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-09",
+          "actor": "non_student",
+          "action": "submit_thesis",
+          "expected": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "got": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-11",
+          "actor": "advisor",
+          "action": "thesis_approve",
+          "expected": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "got": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-12",
+          "actor": "edu",
+          "action": "schedule_defense",
+          "expected": "زمان و مکان دفاع تعیین شد",
+          "got": "زمان و مکان دفاع تعیین شد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-29",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "نویسنده غیردانشجو مشمول نمره‌دهی نیست."
+        },
+        {
+          "day": "2027-01-29",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "تکمیل‌شده",
+          "got": "تکمیل‌شده",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 2.009256833989639,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 12 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: —",
+          "got": "رتبه‌ی ۱: ref_ai",
+          "match": null,
+          "seconds": 8.029463374987245,
+          "detail": "ترتیب: ref_ai، ref_db، head، ref_net"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "21 اعلان ارسال شود",
+          "got": "21 ارسال شد",
+          "match": true,
+          "seconds": 40.195039417012595,
+          "detail": "متن مدل زبانی: 21، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "group_reject",
+      "title": "رد پیشنهاد در گروه و ثبت دوباره",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "group_reject",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "group_reject",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "group_reject",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "group_reject",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-14",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-26",
+          "actor": "ref_net",
+          "action": "submit_review",
+          "expected": "در انتظار تصویب گروه",
+          "got": "در انتظار تصویب گروه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-31",
+          "actor": "head",
+          "action": "group_reject",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "برای این اقدام نوشتن توضیح الزامی است."
+        },
+        {
+          "day": "2026-10-31",
+          "actor": "head",
+          "action": "group_reject",
+          "expected": "ردشده",
+          "got": "ردشده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-01",
+          "actor": "group_reject",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، introduction، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 2.0117803339962848,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 13 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: —",
+          "got": "رتبه‌ی ۱: ref_db",
+          "match": null,
+          "seconds": 8.023042207991239,
+          "detail": "ترتیب: ref_db، ref_ai، head، ref_net"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "12 اعلان ارسال شود",
+          "got": "12 ارسال شد",
+          "match": true,
+          "seconds": 6.028874334006105,
+          "detail": "متن مدل زبانی: 12، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "late_and_reminders",
+      "title": "تأخیر در تحویل پیشنهاد و یادآوری مهلت",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "late_and_reminders",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "late_and_reminders",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-21",
+          "actor": "late_and_reminders",
+          "action": "reminders",
+          "expected": "بدون یادآوری",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-11-27",
+          "actor": "late_and_reminders",
+          "action": "reminders",
+          "expected": "proposal_submission:d14",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-04",
+          "actor": "late_and_reminders",
+          "action": "reminders",
+          "expected": "proposal_submission:d7",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-11",
+          "actor": "late_and_reminders",
+          "action": "reminders",
+          "expected": "proposal_submission:d0",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-14",
+          "actor": "late_and_reminders",
+          "action": "reminders",
+          "expected": "proposal_submission:overdue1",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-15",
+          "actor": "late_and_reminders",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-15",
+          "actor": "late_and_reminders",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-20",
+          "actor": "advisor",
+          "action": "reminders",
+          "expected": "proposal_submission:overdue2",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-21",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-23",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-02-16",
+          "actor": "head",
+          "action": "reminders",
+          "expected": "group_review:d7",
+          "got": "مطابق قواعد",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 2.006779874995118,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 12 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: —",
+          "got": "رتبه‌ی ۱: ref_ai",
+          "match": null,
+          "seconds": 8.032506457995623,
+          "detail": "ترتیب: ref_ai، ref_db، head، ref_net"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "6 اعلان ارسال شود",
+          "got": "6 ارسال شد",
+          "match": true,
+          "seconds": 0.0036722499935422093,
+          "detail": "متن مدل زبانی: 6، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "guards",
+      "title": "نگهبان‌ها و کنترل دسترسی",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "guards",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "edu",
+          "action": "select_advisor",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «انتخاب استاد راهنما» فقط توسط «دانشجو / نویسنده» این پرونده ممکن است."
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "guards",
+          "action": "select_advisor",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "استاد راهنما باید عضو هیئت‌علمی و عضو یک گروه آموزشی باشد."
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "guards",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "guards",
+          "action": "submit_proposal",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "ابتدا فایل پیشنهاد را بارگذاری کنید."
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "guards",
+          "action": "upload_proposal",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1 (complete)",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-12",
+          "actor": "guards",
+          "action": "submit_proposal",
+          "expected": "در انتظار تأیید استاد راهنما",
+          "got": "در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "ref_db",
+          "action": "advisor_approve",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «تأیید پیشنهاد و امضای استاد راهنما» فقط توسط «استاد راهنما» این پرونده ممکن است."
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "advisor",
+          "action": "advisor_return",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "برای این اقدام نوشتن توضیح الزامی است."
+        },
+        {
+          "day": "2026-10-13",
+          "actor": "advisor",
+          "action": "advisor_approve",
+          "expected": "در انتظار ثبت در آموزش دانشکده",
+          "got": "در انتظار ثبت در آموزش دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-14",
+          "actor": "edu",
+          "action": "edu_register",
+          "expected": "در انتظار تخصیص داور",
+          "got": "در انتظار تخصیص داور",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "استاد راهنما یا نویسنده نمی‌تواند داور همان پرونده باشد."
+        },
+        {
+          "day": "2026-10-15",
+          "actor": "head",
+          "action": "assign_referees",
+          "expected": "در حال داوری",
+          "got": "در حال داوری",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-20",
+          "actor": "ref_net",
+          "action": "submit_review",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «ثبت رأی داور (تأیید / بازگشت جهت اصلاح)» فقط توسط «داور» این پرونده ممکن است."
+        },
+        {
+          "day": "2026-10-20",
+          "actor": "ref_db",
+          "action": "submit_review",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "برای رأی «بازگشت جهت اصلاح» نظر مکتوب الزامی است."
+        },
+        {
+          "day": "2026-10-20",
+          "actor": "ref_db",
+          "action": "submit_review",
+          "expected": "در انتظار تصویب گروه",
+          "got": "در انتظار تصویب گروه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-21",
+          "actor": "edu",
+          "action": "group_approve",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «تصویب پیشنهاد در گروه» فقط توسط «مدیر گروه» این پرونده ممکن است."
+        },
+        {
+          "day": "2026-10-21",
+          "actor": "head",
+          "action": "group_approve",
+          "expected": "در انتظار تصویب شورای دانشکده",
+          "got": "در انتظار تصویب شورای دانشکده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-22",
+          "actor": "edu",
+          "action": "council_approve",
+          "expected": "در حال اجرای پروژه",
+          "got": "در حال اجرای پروژه",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-30",
+          "actor": "guards",
+          "action": "submit_thesis",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "ابتدا فایل پایان‌نامه را بارگذاری کنید."
+        },
+        {
+          "day": "2026-12-30",
+          "actor": "guards",
+          "action": "upload_thesis",
+          "expected": "انجام شود",
+          "got": "نسخه‌ی 1",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-30",
+          "actor": "guards",
+          "action": "submit_thesis",
+          "expected": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "got": "پایان‌نامه در انتظار تأیید استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-12-31",
+          "actor": "advisor",
+          "action": "thesis_approve",
+          "expected": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "got": "پایان‌نامه تحویل شد؛ در انتظار تعیین زمان دفاع",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-01",
+          "actor": "edu",
+          "action": "schedule_defense",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "دفاع باید حداقل ۳ ماه پس از تصویب نهایی باشد؛ زودترین تاریخ مجاز ۱۴۰۵/۱۱/۰۲ است."
+        },
+        {
+          "day": "2027-01-01",
+          "actor": "edu",
+          "action": "schedule_defense",
+          "expected": "زمان و مکان دفاع تعیین شد",
+          "got": "زمان و مکان دفاع تعیین شد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2027-01-02",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "ثبت نتیجه پیش از روز دفاع (۱۴۰۵/۱۱/۰۲) ممکن نیست."
+        },
+        {
+          "day": "2027-01-22",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "نمره باید بین ۰ تا ۲۰ باشد."
+        },
+        {
+          "day": "2027-01-22",
+          "actor": "guards",
+          "action": "record_result",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «ثبت نتیجه‌ی دفاع و نمره» فقط توسط «استاد راهنما» این پرونده ممکن است."
+        },
+        {
+          "day": "2027-01-22",
+          "actor": "advisor",
+          "action": "record_result",
+          "expected": "تکمیل‌شده",
+          "got": "تکمیل‌شده",
+          "ok": true,
+          "detail": ""
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعتبارسنجی سند",
+          "expected": "مطابق قالب",
+          "got": "ناقص: advisor_name، approach، evaluation، introduction، references، related_work، resources، schedule، student_email، student_name، student_number، term، title",
+          "match": false,
+          "seconds": 2.0078765409998596,
+          "detail": "تشخیص درست 0 از 0 نقص؛ 13 هشدار نادرست"
+        },
+        {
+          "agent": "پیشنهاد داور",
+          "expected": "رتبه‌ی ۱: —",
+          "got": "رتبه‌ی ۱: ref_db",
+          "match": null,
+          "seconds": 8.023795040993718,
+          "detail": "ترتیب: ref_db، ref_ai، head، ref_net"
+        },
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "20 اعلان ارسال شود",
+          "got": "20 ارسال شد",
+          "match": true,
+          "seconds": 12.06487970802118,
+          "detail": "متن مدل زبانی: 20، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    },
+    {
+      "key": "cancel",
+      "title": "لغو پرونده توسط آموزش",
+      "ok": true,
+      "error": "",
+      "steps": [
+        {
+          "day": "2026-10-11",
+          "actor": "cancel",
+          "action": "create",
+          "expected": "انتخاب استاد راهنما",
+          "got": "انتخاب استاد راهنما",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-11",
+          "actor": "cancel",
+          "action": "select_advisor",
+          "expected": "تدوین پیشنهاد",
+          "got": "تدوین پیشنهاد",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-16",
+          "actor": "cancel",
+          "action": "cancel",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «لغو پرونده» فقط توسط «آموزش دانشکده» این پرونده ممکن است."
+        },
+        {
+          "day": "2026-10-16",
+          "actor": "edu",
+          "action": "cancel",
+          "expected": "GuardFailed",
+          "got": "GuardFailed",
+          "ok": true,
+          "detail": "برای این اقدام نوشتن توضیح الزامی است."
+        },
+        {
+          "day": "2026-10-16",
+          "actor": "edu",
+          "action": "cancel",
+          "expected": "لغوشده",
+          "got": "لغوشده",
+          "ok": true,
+          "detail": ""
+        },
+        {
+          "day": "2026-10-17",
+          "actor": "cancel",
+          "action": "submit_proposal",
+          "expected": "NotAllowed",
+          "got": "NotAllowed",
+          "ok": true,
+          "detail": "اقدام «ارسال پیشنهاد برای استاد راهنما» در وضعیت «لغوشده» ممکن نیست."
+        }
+      ],
+      "observations": [
+        {
+          "agent": "اعلان ایمیلی",
+          "expected": "2 اعلان ارسال شود",
+          "got": "2 ارسال شد",
+          "match": true,
+          "seconds": 2.0124021250230726,
+          "detail": "متن مدل زبانی: 2، متن ثابت پشتیبان: 0، ناموفق: 0"
+        }
+      ]
+    }
+  ]
+}

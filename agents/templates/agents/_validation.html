@@ -1,0 +1,31 @@
+{% load portal %}{% if show %}
+<details class="agent-box"{% if validation.status == "issues" %} open{% endif %}>
+  <summary>
+    <span class="agent-tag">بررسی خودکار قالب</span>
+    {% if not validation %}<span class="badge plain">انجام نشده</span>
+    {% elif validation.is_waiting %}<span class="badge wait" data-agent-waiting>در حال بررسی…</span>
+    {% elif validation.is_stale %}<span class="badge stopped">بی‌پاسخ ماند</span>
+    {% elif validation.status == "passed" %}<span class="badge done">مطابق قالب</span>
+    {% elif validation.status == "issues" %}<span class="badge wait">{{ validation.problems|length|fa }} مورد نیازمند توجه</span>
+    {% else %}<span class="badge stopped">بررسی انجام نشد</span>{% endif %}
+  </summary>
+  {% if validation.items %}
+    <ul class="checklist">
+    {% for item in validation.items %}
+      <li class="{% if item.ok %}ok{% else %}missing{% endif %}">
+        <span class="mark" aria-hidden="true">{% if item.ok %}✓{% else %}✗{% endif %}</span>
+        <span><strong>{{ item.label }}</strong><br><small>{{ item.note }}</small></span>
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+  {% if validation.error %}<p class="agent-warning">{{ validation.error }}</p>{% endif %}
+  {% if validation.is_stale %}<p class="agent-warning">پاسخی از سرویس بررسی خودکار نرسید.</p>{% endif %}
+  <p class="agent-note">این بررسی را یک مدل زبانی انجام می‌دهد و ممکن است خطا کند؛ فقط راهنمای شماست و مانع ارسال پیشنهاد نیست.</p>
+  {% if can_retry and not validation.is_waiting %}
+    <form method="post" action="{% url 'validation_retry' version.pk %}">{% csrf_token %}
+      <button class="btn secondary small" type="submit">{% if validation %}بررسی دوباره{% else %}بررسی خودکار قالب{% endif %}</button>
+    </form>
+  {% endif %}
+</details>
+{% endif %}

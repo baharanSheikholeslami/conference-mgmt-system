@@ -10,6 +10,9 @@ from datetime import date
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+from django.db.models import Case, IntegerField, When
+
+from agents import services as agents
 
 from . import rules, services
 from .enums import ReviewDecision
@@ -80,10 +83,11 @@ class ActionForm(forms.Form):
     note = forms.CharField(label="توضیح", required=False,
                            widget=forms.Textarea(attrs={"rows": 4}))
 
-    def __init__(self, *args, case, transition, **kwargs):
+    def __init__(self, *args, case, transition, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.case = case
         self.transition = transition
+        self.user = user          # برای نمایش پیشنهاد عامل‌ها (در حالت سایه فقط به آموزش)
         note = self.fields["note"]
         note.required = transition.note_required
         note.label = "توضیح (الزامی)" if transition.note_required else "توضیح (اختیاری)"
@@ -98,15 +102,32 @@ class ActionForm(forms.Form):
         return {k: v for k, v in self.cleaned_data.items() if k != "note"}
 
 
+def _ranked(queryset, ranks):
+    """
+    فاز ۳: اگر عامل تطبیق رتبه‌بندی داده باشد، فهرست استادان به همان ترتیب نمایش داده می‌شود.
+    هیچ گزینه‌ای از پیش انتخاب نمی‌شود؛ تصمیم با انسان (دانشجو / مدیر گروه) است.
+    """
+    if ranks:
+        order = Case(*[When(pk=pk, then=rank) for pk, rank in ranks.items()],
+                     default=len(ranks) + 1, output_field=IntegerField())
+        queryset = queryset.order_by(order, "last_name", "first_name")
+    return queryset
+
+
+def _rank_label(ranks, user):
+    return f" (پیشنهاد سامانه: رتبه‌ی {fa_digits(ranks[user.pk])})" if user.pk in ranks else ""
+
+
 class SelectAdvisorForm(ActionForm):
     advisor = forms.ModelChoiceField(label="استاد راهنما", queryset=None,
                                      widget=forms.RadioSelect, empty_label=None)
 
     def setup(self):
         field = self.fields["advisor"]
-        field.queryset = services.eligible_advisors()
+        ranks = agents.suggestion_ranks(self.case, "advisor", self.user)
+        field.queryset = _ranked(services.eligible_advisors(), ranks)
         field.label_from_instance = lambda u: f"{u} — گروه {u.department}" + (
-            f" — {u.expertise}" if u.expertise else "")
+            f" — {u.expertise}" if u.expertise else "") + _rank_label(ranks, u)
         del self.fields["note"]
 
 
@@ -116,8 +137,10 @@ class AssignRefereesForm(ActionForm):
 
     def setup(self):
         field = self.fields["referees"]
-        field.queryset = services.eligible_referees(self.case)
-        field.label_from_instance = lambda u: f"{u}" + (f" — {u.expertise}" if u.expertise else "")
+        ranks = agents.suggestion_ranks(self.case, "referee", self.user)
+        field.queryset = _ranked(services.eligible_referees(self.case), ranks)
+        field.label_from_instance = lambda u: (
+            f"{u}" + (f" — {u.expertise}" if u.expertise else "") + _rank_label(ranks, u))
         field.help_text = (f"حداقل {fa_digits(self.case.required_referees)} داور از اعضای گروه "
                            f"{self.case.department} انتخاب کنید.")
 

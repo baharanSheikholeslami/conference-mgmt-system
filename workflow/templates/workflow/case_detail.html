@@ -1,5 +1,5 @@
 {% extends "workflow/base.html" %}
-{% load portal %}
+{% load portal agent_tags %}
 {% block title %}{{ case.title_fa }}{% endblock %}
 {% block content %}
 <a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>
@@ -77,6 +77,7 @@
               {% if review.comment %}<p>{{ review.comment }}</p>{% endif %}
             </div>
           {% endfor %}
+          {% if v.kind == "proposal" %}{% validation_box v %}{% endif %}
         </td>
         <td><a href="{% url 'document_download' v.pk %}">دانلود</a></td>
       </tr>
@@ -127,4 +128,6 @@
   {% endfor %}
   </ol>
 </section>
+
+{% notifications_card case %}
 {% endblock %}

@@ -1,0 +1,34 @@
+{% load portal %}
+<section class="card agent-panel">
+  <h2>پیشنهاد سامانه برای استاد راهنما <span class="agent-tag">هوش مصنوعی</span></h2>
+  <p class="muted">موضوع پروژه و علایق پژوهشی خود را بنویسید تا سامانه آن را با زمینه‌های تخصصی اساتید مقایسه کند.</p>
+  {% if run.is_waiting %}
+    <p class="empty" data-agent-waiting>در حال یافتن استادان مرتبط… (صفحه خودکار تازه می‌شود)</p>
+  {% else %}
+    <form method="post" action="{% url 'advisor_suggestions_request' case.pk %}" class="stack">{% csrf_token %}
+      <label for="advisor-interests">موضوع و علایق پژوهشی من</label>
+      <textarea id="advisor-interests" name="interests" rows="3" maxlength="1500" required
+                placeholder="مثلاً: می‌خواهم روی عامل‌های مبتنی بر مدل زبانی و خودکارسازی فرایندهای اداری کار کنم.">{{ run.interests }}</textarea>
+      <div><button class="btn secondary small" type="submit">{% if run %}پیشنهاد دوباره{% else %}پیشنهاد استاد راهنما{% endif %}</button></div>
+    </form>
+  {% endif %}
+  {% if run and not run.is_waiting %}
+    {% if run.status == "done" and rows %}
+      <ol class="suggestions">
+      {% for row in rows %}
+        <li>
+          <strong>{{ row.referee }}</strong>
+          <span class="badge plain">گروه {{ row.referee.department }}</span>
+          {% if row.percent is not None %}<span class="badge">تطبیق با علایق شما {{ row.percent|fa }}٪</span>
+          {% else %}<span class="badge plain">تخصص ثبت نشده</span>{% endif %}
+          <span class="badge plain">دانشجویان در جریان: {{ row.load|fa }}</span>
+          {% if row.reason %}<p>{{ row.reason }}</p>{% endif %}
+        </li>
+      {% endfor %}
+      </ol>
+    {% elif run.status != "done" %}
+      <p class="agent-warning">{% if run.is_stale %}پاسخی از سرویس پیشنهاد استاد نرسید.{% else %}{{ run.error|default:"پیشنهادی آماده نشد." }}{% endif %}</p>
+    {% endif %}
+  {% endif %}
+  <p class="agent-note">رتبه‌بندی فقط بر پایه‌ی شباهت معنایی متن شما با «زمینه‌های تخصصی» ثبت‌شده‌ی اساتید است و ممکن است دقیق نباشد. انتخاب استاد راهنما با خود شماست و پیش از آن بهتر است با استاد گفتگو کنید.</p>
+</section>

@@ -16,6 +16,8 @@ MIN_MONTHS_APPROVAL_TO_DEFENSE = 3  # توضیح ۴: حداقل ۳ ماه بین
 THESIS_LEAD_WEEKS = 3               # توضیح ۴: پایان‌نامه حداقل ۳ هفته پیش از مهلت نمره
 REFEREES_FOR_STUDENT = 1
 REFEREES_FOR_NON_STUDENT = 2        # نویسنده غیردانشجو: حداقل دو داور
+REMINDER_DAYS = (14, 7, 3, 1, 0)    # فاز ۳: چند روز مانده به هر مهلت یادآوری فرستاده شود (۰ = روز مهلت)
+OVERDUE_REPEAT_DAYS = 7             # فاز ۳: پس از گذشتن مهلت، هشدار هر چند روز یک‌بار تکرار شود
 
 
 def add_months(d: date, months: int) -> date:
@@ -50,3 +52,19 @@ def current_term(today: date):
     if j.month >= 4:                        # تیر تا شهریور
         return j.year - 1, Semester.SUMMER
     return j.year - 1, Semester.SECOND      # فروردین تا خرداد
+
+
+def reminder_stage(days_left: int):
+    """
+    مرحله‌ی یادآوری یک مهلت بر اساس روزهای مانده؛ None یعنی هنوز زود است.
+    هر مرحله برای هر گیرنده فقط یک بار فرستاده می‌شود، پس اگر سامانه یک روز خاموش باشد
+    یادآوری همان مرحله روز بعد جبران می‌شود:
+        ۸ تا ۱۴ روز مانده ← d14 | ۴ تا ۷ ← d7 | ۲ و ۳ ← d3 | ۱ ← d1 | روز مهلت ← d0
+        پس از مهلت ← overdue1 (هفته‌ی اول تأخیر)، overdue2 (هفته‌ی دوم)، …
+    """
+    if days_left < 0:
+        return f"overdue{(-days_left - 1) // OVERDUE_REPEAT_DAYS + 1}"
+    for threshold in sorted(REMINDER_DAYS):
+        if days_left <= threshold:
+            return f"d{threshold}"
+    return None

@@ -1,0 +1,23 @@
+{% load portal %}{% if show and notifications %}
+<section class="card">
+  <h2>اعلان‌های ایمیلی</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>گیرنده</th><th>موضوع و متن</th><th>زمان</th><th>وضعیت</th></tr></thead>
+    <tbody>
+    {% for n in notifications %}
+      <tr>
+        <td>{{ n.recipient }}</td>
+        <td>
+          {% if n.body %}<details><summary>{{ n.subject }}</summary><p class="mail-body">{{ n.body }}</p></details>
+          {% else %}{{ n.subject }}{% endif %}
+        </td>
+        <td>{{ n.sent_at|default:n.created_at|jalali_datetime }}</td>
+        <td><span class="badge {% if n.status == 'sent' %}done{% elif n.status == 'failed' %}stopped{% else %}wait{% endif %}">{{ n.get_status_display }}</span></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}

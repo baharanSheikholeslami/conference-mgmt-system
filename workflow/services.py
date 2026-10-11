@@ -9,7 +9,7 @@ statemachine.py می‌گوید «چه گذارهایی وجود دارد»؛ ا
 همه‌ی این مراحل در یک تراکنش‌اند: یا همه انجام می‌شود یا هیچ‌کدام.
 
 ویوها (views.py) هیچ‌گاه مستقیم case.state را تغییر نمی‌دهند؛ فقط perform() را صدا می‌زنند.
-در فاز ۳ هم n8n از همین توابع و همین CaseEventها استفاده می‌کند.
+عامل‌های n8n (فاز ۳) فقط به CaseEventها گوش می‌دهند و هیچ‌وقت perform() را صدا نمی‌زنند.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -330,7 +330,10 @@ def perform(case, action, actor, note="", **payload):
 
 
 def _log(case, actor, action, from_state, note="", data=None):
-    """تنها نقطه‌ی ثبت رویداد؛ در فاز ۳ فراخوانی Webhook عامل‌های n8n همین‌جا اضافه می‌شود."""
+    """
+    تنها نقطه‌ی ثبت رویداد. عامل‌های n8n (فاز ۳) به ثبت همین رویدادها گوش می‌دهند
+    (agents/signals.py)؛ این فایل عمداً از وجود آن‌ها بی‌خبر است.
+    """
     return CaseEvent.objects.create(case=case, actor=actor, action=action, from_state=from_state,
                                     to_state=case.state, note=note, data=data or {})
 

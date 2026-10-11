@@ -1,0 +1,18 @@
+{% load static %}{% if show %}
+<button id="assistant-toggle" class="assistant-toggle" type="button" aria-expanded="false" aria-controls="assistant-panel">دستیار آیین‌نامه</button>
+<section id="assistant-panel" class="assistant-panel" aria-label="دستیار آیین‌نامه" hidden>
+  <header>
+    <strong>دستیار آیین‌نامه</strong>
+    <button id="assistant-close" type="button" aria-label="بستن">×</button>
+  </header>
+  <div id="assistant-log" class="assistant-log" aria-live="polite">
+    <div class="bubble bot">درباره‌ی رویه‌ی ثبت‌نام، تصویب و دفاع پروژه‌ی کارشناسی بپرسید. پاسخ فقط بر پایه‌ی اسناد رسمیِ نمایه‌شده داده می‌شود و بندهای مرجع زیر هر پاسخ می‌آید.</div>
+  </div>
+  <form id="assistant-form" data-url="{% url 'assistant_ask' %}" data-csrf="{{ csrf_token }}">
+    <input id="assistant-input" type="text" maxlength="500" placeholder="پرسش خود را بنویسید…" autocomplete="off" required>
+    <button class="btn" type="submit">بپرس</button>
+  </form>
+  <p class="agent-note">دستیار تصمیم اداری نمی‌گیرد و ممکن است خطا کند؛ ملاک نهایی متن آیین‌نامه است.</p>
+</section>
+<script src="{% static 'agents/agents.js' %}" defer></script>
+{% endif %}

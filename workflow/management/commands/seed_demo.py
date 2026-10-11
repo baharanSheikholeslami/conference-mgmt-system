@@ -61,6 +61,7 @@ class Command(BaseCommand):
                 "department": dept if has_dept else None,
                 "is_department_head": is_head, "student_number": number,
                 "expertise": expertise,
+                "email": f"{username}@example.com",     # برای آزمودن اعلان‌های ایمیلی (فاز ۳)
             })
             if created:
                 u.set_password(PASSWORD)

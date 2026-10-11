@@ -17,6 +17,8 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
+from agents import services as agents
+
 from . import forms, rules, services
 from .enums import DocKind, State
 from .models import DocumentVersion
@@ -28,6 +30,9 @@ STAGES = [State.ADVISOR_SELECTION, State.DRAFTING, State.ADVISOR_REVIEW, State.E
           State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED, State.COMPLETED]
 STAGE_OF = {state: i for i, state in enumerate(STAGES, 1)} | {
     State.REVISION: STAGES.index(State.REFEREE_REVIEW) + 1}
+
+
+SUGGESTION_PURPOSE = {"select_advisor": "advisor", "assign_referees": "referee"}
 
 
 def _posted(request):
@@ -179,7 +184,7 @@ def case_action(request, pk, action):
         return redirect("case_detail", pk=case.pk)
 
     t = offer.transition
-    form = forms.action_form_class(action)(_posted(request), case=case, transition=t)
+    form = forms.action_form_class(action)(_posted(request), case=case, transition=t, user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
             services.perform(case, action, request.user, note=form.cleaned_data.get("note", ""),
@@ -191,4 +196,7 @@ def case_action(request, pk, action):
             return redirect("case_detail", pk=case.pk)
     return render(request, "workflow/form.html", {
         "form": form, "case": case, "title": t.label, "submit_label": "ثبت",
-        "danger": action in ("cancel", "group_reject", "council_reject")})
+        "danger": action in ("cancel", "group_reject", "council_reject"),
+        # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم انتخاب استاد راهنما / تخصیص داور (فقط نمایش؛ انتخاب با انسان است)
+        "suggestions": agents.suggestion_panel(case, SUGGESTION_PURPOSE[action], request.user)
+                       if action in SUGGESTION_PURPOSE else None})

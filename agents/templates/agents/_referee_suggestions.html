@@ -1,0 +1,29 @@
+{% load portal %}
+<section class="card agent-panel">
+  <h2>پیشنهاد سامانه برای داور <span class="agent-tag">هوش مصنوعی</span></h2>
+  {% if not run %}
+    <p class="empty">هنوز پیشنهادی برای این پرونده درخواست نشده است.</p>
+  {% elif run.is_waiting %}
+    <p class="empty">در حال آماده‌سازی پیشنهاد… <a href="">تازه‌سازی صفحه</a></p>
+  {% elif run.status == "done" and rows %}
+    <ol class="suggestions">
+    {% for row in rows %}
+      <li>
+        <strong>{{ row.referee }}</strong>
+        {% if row.percent is not None %}<span class="badge">شباهت موضوعی {{ row.percent|fa }}٪</span>
+        {% else %}<span class="badge plain">تخصص ثبت نشده</span>{% endif %}
+        <span class="badge plain">داوری‌های در جریان: {{ row.load|fa }}</span>
+        {% if row.reason %}<p>{{ row.reason }}</p>{% endif %}
+      </li>
+    {% endfor %}
+    </ol>
+  {% else %}
+    <p class="agent-warning">{% if run.is_stale %}پاسخی از سرویس پیشنهاد داور نرسید.{% else %}{{ run.error|default:"پیشنهادی آماده نشد." }}{% endif %}</p>
+  {% endif %}
+  <p class="agent-note">رتبه‌بندی فقط بر پایه‌ی شباهت معنایی موضوع پیشنهاد با «زمینه‌های تخصصی» اعضای همین گروه است و ممکن است دقیق نباشد. این فهرست صرفاً پیشنهاد است؛ انتخاب داور با شماست.</p>
+  {% if not run.is_waiting %}
+    <form method="post" action="{% url 'suggestions_refresh' case.pk %}">{% csrf_token %}
+      <button class="btn secondary small" type="submit">{% if run %}درخواست دوباره‌ی پیشنهاد{% else %}درخواست پیشنهاد{% endif %}</button>
+    </form>
+  {% endif %}
+</section>
