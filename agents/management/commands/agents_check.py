@@ -1,6 +1,12 @@
+import json
+import os
+import urllib.error
+import urllib.request
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db.models import Count
+from django.urls import reverse
 
 from agents import n8n, services
 from agents.models import PolicyChunk
@@ -31,11 +37,16 @@ class Command(BaseCommand):
         else:
             self.fail("AGENT_TOKEN خالی یا کوتاه است", "یک رشته‌ی تصادفی بلند در .env بگذارید.")
 
+        if settings.AGENTS_SHADOW_MODE:
+            self.ok(f"حالت سایه روشن است: خروجی عامل‌ها فقط برای آموزش، ایمیل‌ها به {settings.AGENTS_SHADOW_MAILBOX}")
+
         self.stdout.write(f"۲) n8n در {settings.N8N_WEBHOOK_URL}")
         if not n8n.healthy():
             self.fail("n8n پاسخ نمی‌دهد", "docker compose up -d را اجرا کنید و http://localhost:5678 را باز کنید.")
             return self.summary()
         self.ok("n8n بالا است")
+        self.check_portal()
+        self.check_ollama()
 
         self.stdout.write("۳) گردش‌کار rag-embed و مدل embedding")
         model = ""
@@ -68,6 +79,36 @@ class Command(BaseCommand):
             except services.AgentError as e:
                 self.fail(str(e), "خطای دقیق را در n8n ← Executions ببینید (مدل گفتگو در دسترس است؟).")
         self.summary()
+
+    def check_portal(self):
+        """n8n نتیجه‌ی عامل‌ها را به API پورتال برمی‌گرداند؛ اگر سرور جنگو خاموش باشد همه‌ی عامل‌ها «بی‌پاسخ» می‌مانند."""
+        url = settings.PORTAL_PUBLIC_URL + reverse("login")
+        try:
+            with urllib.request.urlopen(url, timeout=3):
+                self.ok(f"پورتال در {settings.PORTAL_PUBLIC_URL} پاسخ می‌دهد (n8n نتیجه‌ها را به آن برمی‌گرداند)")
+        except (urllib.error.URLError, TimeoutError, OSError):
+            self.fail(f"پورتال در {settings.PORTAL_PUBLIC_URL} پاسخ نمی‌دهد",
+                      "در ترمینال دیگری اجرا کنید: python manage.py runserver 0.0.0.0:8000")
+
+    def check_ollama(self):
+        """اگر مدل‌ها روی Ollama همین مک هستند، بررسی می‌کند هر دو مدل دانلود شده باشند."""
+        base = os.getenv("LLM_BASE_URL", "")
+        if ":11434" not in base:
+            return
+        wanted = {os.getenv("LLM_CHAT_MODEL", "gemma3:4b"), os.getenv("EMBEDDING_MODEL", "bge-m3")}
+        try:
+            with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=3) as response:
+                installed = {m["name"] for m in json.load(response).get("models", [])}
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            self.fail("Ollama روی این مک در حال اجرا نیست", "برنامه‌ی Ollama را باز کنید یا: ollama serve")
+            return
+        installed |= {name.removesuffix(":latest") for name in installed}
+        missing = sorted(m for m in wanted if m not in installed)
+        if missing:
+            self.fail(f"مدل(های) {', '.join(missing)} در Ollama نیست",
+                      " ؛ ".join(f"ollama pull {m}" for m in missing))
+        else:
+            self.ok(f"Ollama مدل‌های {', '.join(sorted(wanted))} را دارد")
 
     def summary(self):
         if self.failed:

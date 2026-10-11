@@ -223,7 +223,8 @@
           "id": "pm3SmtpMailpit01",
           "name": "Portal SMTP (Mailpit)"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -240,7 +241,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ key: $('Finalize Message').all()[$itemIndex].json.key, status: 'sent', subject: $('Finalize Message').all()[$itemIndex].json.subject, body: $('Finalize Message').all()[$itemIndex].json.body, generated_by: $('Finalize Message').all()[$itemIndex].json.generated_by }) }}",
+        "jsonBody": "={{ JSON.stringify({ key: $('Finalize Message').all()[$itemIndex].json.key, status: $json.error ? 'failed' : 'sent', subject: $('Finalize Message').all()[$itemIndex].json.subject, body: $('Finalize Message').all()[$itemIndex].json.body, generated_by: $('Finalize Message').all()[$itemIndex].json.generated_by }) }}",
         "options": {
           "timeout": 60000
         }

@@ -134,6 +134,10 @@ AGENTS_ENABLED = os.getenv("AGENTS_ENABLED", "False") == "True"
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://localhost:5678/webhook").rstrip("/")
 AGENT_TOKEN = os.getenv("AGENT_TOKEN", "")          # راز مشترک پورتال و n8n (سرآیند X-Agent-Token)
 PORTAL_PUBLIC_URL = os.getenv("PORTAL_PUBLIC_URL", "http://localhost:8000").rstrip("/")  # پیوند داخل ایمیل‌ها
+# حالت سایه (فاز ۴): عامل‌ها کار می‌کنند ولی خروجی‌شان فقط به آموزش و مدیر سامانه نشان داده می‌شود
+# و همه‌ی ایمیل‌ها به‌جای گیرنده‌ی واقعی به AGENTS_SHADOW_MAILBOX می‌روند.
+AGENTS_SHADOW_MODE = os.getenv("AGENTS_SHADOW_MODE", "False") == "True"
+AGENTS_SHADOW_MAILBOX = os.getenv("AGENTS_SHADOW_MAILBOX", "shadow@example.com")
 
 # فایل‌های بارگذاری‌شده فقط از طریق ویوی document_download (با کنترل دسترسی) سرو می‌شوند
 MEDIA_URL = 'media/'

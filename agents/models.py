@@ -124,27 +124,46 @@ class AssistantMessage(models.Model):
 # ───────────────────────── ۳. پیشنهاد داور ─────────────────────────
 
 class SuggestionRun(_AgentRun):
-    """آخرین درخواست «پیشنهاد داور» برای یک پرونده."""
+    """
+    آخرین درخواست «تطبیق معنایی» برای یک پرونده؛ برای هر هدف (purpose) یک ردیف:
+      • referee — پیشنهاد داور به مدیر گروه (موضوع = عنوان + مقدمه‌ی پیشنهاد)
+      • advisor — پیشنهاد استاد راهنما به دانشجو (موضوع = عنوان + علایقی که خود دانشجو نوشته)
+    """
+
+    class Purpose(models.TextChoices):
+        REFEREE = "referee", "پیشنهاد داور"
+        ADVISOR = "advisor", "پیشنهاد استاد راهنما"
 
     class Status(models.TextChoices):
         PENDING = "pending", "در حال آماده‌سازی"
         DONE = "done", "آماده"
         ERROR = "error", "انجام نشد"
 
-    case = models.OneToOneField(ProjectCase, on_delete=models.CASCADE, related_name="suggestion_run")
+    case = models.ForeignKey(ProjectCase, on_delete=models.CASCADE, related_name="suggestion_runs")
+    purpose = models.CharField("هدف", max_length=10, choices=Purpose.choices, default=Purpose.REFEREE)
+    query = models.TextField("متن موضوع", blank=True,
+                             help_text="متنی که با تخصص اساتید مقایسه شد (برای ارزیابی فاز ۵)")
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
 
     class Meta:
-        verbose_name = "درخواست پیشنهاد داور"
-        verbose_name_plural = "درخواست‌های پیشنهاد داور"
+        verbose_name = "درخواست تطبیق استاد"
+        verbose_name_plural = "درخواست‌های تطبیق استاد"
+        constraints = [models.UniqueConstraint(fields=["case", "purpose"], name="one_run_per_purpose")]
 
     def __str__(self):
-        return f"{self.case} — {self.get_status_display()}"
+        return f"{self.case} — {self.get_purpose_display()} — {self.get_status_display()}"
+
+    @property
+    def interests(self):
+        """متنی که دانشجو برای پیشنهاد استاد راهنما نوشته است (آخرین سطر query، پس از عنوان‌ها)."""
+        return self.query.rsplit("\n", 1)[-1] if self.purpose == self.Purpose.ADVISOR else ""
 
 
 class RefereeSuggestion(models.Model):
+    """یک استاد پیشنهادی در یک SuggestionRun (داور یا استاد راهنما، بسته به run.purpose)."""
     run = models.ForeignKey(SuggestionRun, on_delete=models.CASCADE, related_name="suggestions")
-    referee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    referee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+",
+                                verbose_name="استاد پیشنهادی")
     rank = models.PositiveSmallIntegerField("رتبه")
     score = models.FloatField("شباهت معنایی", null=True, blank=True,
                               help_text="شباهت کسینوسی موضوع پیشنهاد با تخصص استاد؛ خالی = تخصص ثبت نشده")
@@ -152,8 +171,8 @@ class RefereeSuggestion(models.Model):
 
     class Meta:
         ordering = ["rank"]
-        verbose_name = "داور پیشنهادی"
-        verbose_name_plural = "داوران پیشنهادی"
+        verbose_name = "استاد پیشنهادی"
+        verbose_name_plural = "استادان پیشنهادی"
         constraints = [models.UniqueConstraint(fields=["run", "referee"], name="one_row_per_referee")]
 
     @property

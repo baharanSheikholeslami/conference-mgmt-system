@@ -32,6 +32,9 @@ STAGE_OF = {state: i for i, state in enumerate(STAGES, 1)} | {
     State.REVISION: STAGES.index(State.REFEREE_REVIEW) + 1}
 
 
+SUGGESTION_PURPOSE = {"select_advisor": "advisor", "assign_referees": "referee"}
+
+
 def _posted(request):
     """داده‌ی فرم ارسال‌شده، یا None برای نمایش اولیه‌ی فرم (GET)."""
     return request.POST if request.method == "POST" else None
@@ -181,7 +184,7 @@ def case_action(request, pk, action):
         return redirect("case_detail", pk=case.pk)
 
     t = offer.transition
-    form = forms.action_form_class(action)(_posted(request), case=case, transition=t)
+    form = forms.action_form_class(action)(_posted(request), case=case, transition=t, user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
             services.perform(case, action, request.user, note=form.cleaned_data.get("note", ""),
@@ -194,5 +197,6 @@ def case_action(request, pk, action):
     return render(request, "workflow/form.html", {
         "form": form, "case": case, "title": t.label, "submit_label": "ثبت",
         "danger": action in ("cancel", "group_reject", "council_reject"),
-        # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم تخصیص داور (فقط نمایش؛ انتخاب با مدیر گروه است)
-        "suggestions": agents.suggestion_panel(case) if action == "assign_referees" else None})
+        # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم انتخاب استاد راهنما / تخصیص داور (فقط نمایش؛ انتخاب با انسان است)
+        "suggestions": agents.suggestion_panel(case, SUGGESTION_PURPOSE[action], request.user)
+                       if action in SUGGESTION_PURPOSE else None})

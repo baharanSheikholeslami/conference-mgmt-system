@@ -7,6 +7,8 @@ urlpatterns = [
     path("assistant/ask/", views.assistant_ask, name="assistant_ask"),
     path("agents/versions/<int:pk>/validate/", views.validation_retry, name="validation_retry"),
     path("agents/cases/<int:pk>/suggestions/", views.suggestions_refresh, name="suggestions_refresh"),
+    path("agents/cases/<int:pk>/advisor-suggestions/", views.advisor_suggestions_request,
+         name="advisor_suggestions_request"),
 
     # n8n (با توکن)
     path("api/agents/validations/<int:pk>/result/", api.validation_result, name="api_validation_result"),

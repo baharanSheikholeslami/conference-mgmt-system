@@ -32,8 +32,8 @@ class RefereeSuggestionInline(admin.TabularInline):
 
 @admin.register(SuggestionRun)
 class SuggestionRunAdmin(admin.ModelAdmin):
-    list_display = ("case", "status", "model", "requested_at", "finished_at")
-    list_filter = ("status",)
+    list_display = ("case", "purpose", "status", "model", "requested_at", "finished_at")
+    list_filter = ("purpose", "status")
     inlines = [RefereeSuggestionInline]
 
 

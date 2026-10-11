@@ -46,6 +46,10 @@ def tearDownModule():
     logging.disable(logging.NOTSET)
 
 
+def run_of(case, purpose="referee"):
+    return SuggestionRun.objects.get(case=case, purpose=purpose)
+
+
 def docx(paragraphs=PROPOSAL, table=FORM_TABLE, name="proposal.docx"):
     from docx import Document
     document = Document()
@@ -417,18 +421,20 @@ class RefereeSuggestionTests(AgentTestCase):
         User.objects.filter(pk=self.ref1.pk).update(expertise="پایگاه‌داده و مهندسی نرم‌افزار")
         case = self.to_assignment()
         (payload,) = self.calls("suggest-referees")
-        run = SuggestionRun.objects.get(case=case)
+        run = run_of(case)
         self.assertEqual((payload["run_id"], run.status), (run.pk, "pending"))
         self.assertEqual({c["id"] for c in payload["candidates"]}, {self.ref1.pk, self.ref2.pk, self.head.pk})
-        self.assertIn({"id": self.ref1.pk, "name": "ref1", "expertise": "پایگاه‌داده و مهندسی نرم‌افزار"},
-                      payload["candidates"])
+        self.assertIn({"id": self.ref1.pk, "name": "ref1", "department": "مهندسی کامپیوتر",
+                       "expertise": "پایگاه‌داده و مهندسی نرم‌افزار"}, payload["candidates"])
+        self.assertEqual(payload["purpose"], "referee")
+        self.assertEqual(payload["result_path"], reverse("api_referee_suggestions_result", args=[run.pk]))
         self.assertTrue(payload["query_text"].startswith("عنوان آزمایشی"))
         self.assertIn("این پروژه یک سامانه‌ی چندعامله", payload["query_text"])   # ابتدای مقدمه
         self.assertNotIn("شماره دانشجویی", payload["query_text"])               # نه صفحه‌ی اول فرم
 
     def test_result_is_ranked_and_filtered_by_the_portal(self):
         case = self.to_assignment()
-        run = case.suggestion_run
+        run = run_of(case)
         response = self.api("api_referee_suggestions_result", args=(run.pk,), data={"model": "m", "suggestions": [
             {"referee_id": self.head.pk, "score": None, "reason": "تخصص ثبت نشده"},
             {"referee_id": self.ref2.pk, "score": 0.41, "reason": "ارتباط کم"},
@@ -445,7 +451,7 @@ class RefereeSuggestionTests(AgentTestCase):
 
     def test_head_sees_ranked_form_but_nothing_is_preselected(self):
         case = self.to_assignment()
-        self.api("api_referee_suggestions_result", args=(case.suggestion_run.pk,), data={"suggestions": [
+        self.api("api_referee_suggestions_result", args=(run_of(case).pk,), data={"suggestions": [
             {"referee_id": self.ref2.pk, "score": 0.9, "reason": "دلیل داور دو"},
             {"referee_id": self.ref1.pk, "score": 0.2, "reason": "دلیل داور یک"}]})
         form = AssignRefereesForm(case=case, transition=TRANSITIONS["assign_referees"])
@@ -467,7 +473,7 @@ class RefereeSuggestionTests(AgentTestCase):
 
     def test_agent_never_assigns_referees_itself(self):
         case = self.to_assignment()
-        self.api("api_referee_suggestions_result", args=(case.suggestion_run.pk,),
+        self.api("api_referee_suggestions_result", args=(run_of(case).pk,),
                  data={"suggestions": [{"referee_id": self.ref1.pk, "score": 0.9}]})
         case.refresh_from_db()
         self.assertEqual(case.state, State.REFEREE_ASSIGNMENT)
@@ -475,7 +481,7 @@ class RefereeSuggestionTests(AgentTestCase):
 
     def test_error_and_refresh(self):
         case = self.to_assignment()
-        run = case.suggestion_run
+        run = run_of(case)
         self.api("api_referee_suggestions_result", args=(run.pk,), data={"error": "مدل embedding پاسخ نداد"})
         self.client.force_login(self.head)
         page = self.client.get(reverse("case_action", args=[case.pk, "assign_referees"]))
@@ -492,9 +498,108 @@ class RefereeSuggestionTests(AgentTestCase):
     def test_n8n_being_down_does_not_block_the_head(self):
         self.n8n.side_effect = n8n.Unavailable("down")
         case = self.to_assignment()
-        self.assertEqual(case.suggestion_run.status, "error")
+        self.assertEqual(run_of(case).status, "error")
         self.assertEqual(self.do(case, "assign_referees", self.head, referees=[self.ref1]).state,
                          State.REFEREE_REVIEW)
+
+
+class AdvisorSuggestionTests(AgentTestCase):
+    """«گفتگوی ساختاریافته»ی انتخاب استاد راهنما: دانشجو علایقش را می‌نویسد، سامانه فقط پیشنهاد می‌دهد."""
+    INTERESTS = "می‌خواهم روی عامل‌های مبتنی بر مدل زبانی و خودکارسازی فرایندهای اداری کار کنم."
+
+    def setUp(self):
+        super().setUp()
+        self.case = self.new_case()
+        self.url = reverse("advisor_suggestions_request", args=[self.case.pk])
+        self.form_url = reverse("case_action", args=[self.case.pk, "select_advisor"])
+
+    def test_student_interests_are_matched_against_all_faculty(self):
+        self.client.force_login(self.student)
+        self.assertRedirects(self.client.post(self.url, {"interests": self.INTERESTS}), self.form_url)
+        (payload,) = self.calls("suggest-referees")
+        run = run_of(self.case, "advisor")
+        self.assertEqual((payload["purpose"], payload["run_id"], run.status), ("advisor", run.pk, "pending"))
+        self.assertTrue(payload["query_text"].endswith(self.INTERESTS))
+        self.assertEqual(run.interests, self.INTERESTS)
+        # همه‌ی اعضای هیئت‌علمی (از هر گروه) نامزدند، نه فقط یک گروه
+        self.assertEqual({c["id"] for c in payload["candidates"]},
+                         {self.advisor.pk, self.ref1.pk, self.ref2.pk, self.head.pk, self.outsider.pk})
+
+    def test_ranked_list_is_shown_but_the_student_chooses(self):
+        services.request_advisor_suggestions(self.case, self.INTERESTS)
+        run = run_of(self.case, "advisor")
+        self.api("api_referee_suggestions_result", args=(run.pk,), data={"suggestions": [
+            {"referee_id": self.outsider.pk, "score": 0.91, "reason": "تخصص در عامل‌های هوشمند"},
+            {"referee_id": self.advisor.pk, "score": 0.52, "reason": "ارتباط متوسط"},
+            {"referee_id": self.student.pk, "score": 0.99, "reason": "دانشجو استاد نیست"}]})
+        self.assertEqual(services.suggestion_ranks(self.case, "advisor"),
+                         {self.outsider.pk: 1, self.advisor.pk: 2})
+        self.client.force_login(self.student)
+        page = self.client.get(self.form_url)
+        self.assertContains(page, "تخصص در عامل‌های هوشمند")
+        self.assertContains(page, "تطبیق با علایق شما ۹۱٪")
+        self.assertContains(page, "پیشنهاد سامانه: رتبه‌ی ۱")
+        self.assertNotContains(page, "checked")
+        self.assertEqual(self.case.state, State.ADVISOR_SELECTION)       # عامل خودش استادی انتخاب نکرد
+        self.client.post(self.form_url, {"advisor": self.advisor.pk})     # دانشجو رتبه‌ی دوم را برگزید
+        self.case.refresh_from_db()
+        self.assertEqual((self.case.state, self.case.advisor), (State.DRAFTING, self.advisor))
+
+    def test_too_short_interests_and_wrong_people_are_rejected(self):
+        self.client.force_login(self.student)
+        self.client.post(self.url, {"interests": "هوش"})
+        self.assertEqual(self.calls("suggest-referees"), [])
+        for user, status in ((self.advisor, 404), (self.edu, 403)):
+            self.client.force_login(user)
+            self.assertEqual(self.client.post(self.url, {"interests": self.INTERESTS}).status_code, status)
+        case = self.do(self.case, "select_advisor", self.student, advisor=self.advisor)
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.post(self.url, {"interests": self.INTERESTS}).status_code, 403)
+        self.assertEqual(case.state, State.DRAFTING)
+
+
+@override_settings(AGENTS_SHADOW_MODE=True, AGENTS_SHADOW_MAILBOX="shadow@example.com")
+class ShadowModeTests(AgentTestCase):
+    """فاز ۴: عامل‌ها کار می‌کنند، اما فقط آموزش خروجی را می‌بیند و هیچ ایمیلی به گیرنده‌ی واقعی نمی‌رسد."""
+
+    def test_agents_still_run_and_record_their_output(self):
+        case = self.drafting_case()
+        self.upload(case)
+        self.assertEqual(len(self.calls("validate-proposal")), 1)
+        self.assertEqual(DocumentValidation.objects.count(), 1)
+
+    def test_emails_go_to_the_shadow_mailbox(self):
+        case = self.drafting_case()
+        self.upload(case)
+        self.act(case, "submit_proposal", self.student)
+        (body,) = self.calls("notify-event")
+        self.assertTrue(body["notifications"])
+        for item in body["notifications"]:
+            self.assertEqual(item["to"], "shadow@example.com")
+            self.assertTrue(item["subject"].startswith("[سایه ← "))
+
+    def test_only_edu_sees_agent_output(self):
+        case = self.drafting_case()
+        self.upload(case)
+        page = reverse("case_detail", args=[case.pk])
+        self.client.force_login(self.student)
+        self.assertNotContains(self.client.get(page), "بررسی خودکار قالب")
+        self.assertNotContains(self.client.get(page), 'id="assistant-panel"')
+        self.assertEqual(self.client.post(reverse("assistant_ask"), "{}",
+                                          content_type="application/json").status_code, 404)
+        self.client.force_login(self.edu)
+        self.assertContains(self.client.get(page), "بررسی خودکار قالب")
+        self.assertContains(self.client.get(page), 'id="assistant-panel"')
+
+    def test_head_gets_an_unranked_form(self):
+        case = RefereeSuggestionTests.to_assignment(self)
+        self.api("api_referee_suggestions_result", args=(run_of(case).pk,),
+                 data={"suggestions": [{"referee_id": self.ref2.pk, "score": 0.9}]})
+        self.client.force_login(self.head)
+        page = self.client.get(reverse("case_action", args=[case.pk, "assign_referees"]))
+        self.assertNotContains(page, "پیشنهاد سامانه")
+        form = AssignRefereesForm(case=case, transition=TRANSITIONS["assign_referees"], user=self.head)
+        self.assertEqual(list(form.fields["referees"].queryset), [self.head, self.ref1, self.ref2])
 
 
 # ───────────────────────── ۴. اطلاع‌رسانی ─────────────────────────

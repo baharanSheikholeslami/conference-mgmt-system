@@ -27,7 +27,8 @@ from workflow import services as wf
 from workflow import statemachine as sm
 from workflow.enums import CaseRole, DeadlineKind, DocKind, State, UserType
 from workflow.jalali import fa_digits, to_jalali
-from workflow.models import (CaseEvent, Deadline, DocumentVersion, RefereeAssignment, User)
+from workflow.models import (CaseEvent, Deadline, DocumentVersion, ProjectCase, RefereeAssignment,
+                             User)
 
 from . import checklist, chunking, extract, n8n
 from .models import (AssistantMessage, DocumentValidation, Notification, PolicyChunk,
@@ -42,6 +43,24 @@ class AgentError(Exception):
 
 def enabled():
     return settings.AGENTS_ENABLED
+
+
+def shadow():
+    """
+    حالت سایه (فاز ۴): عامل‌ها کار می‌کنند و خروجی‌شان ثبت می‌شود، اما کاربران عادی آن را نمی‌بینند
+    و ایمیل‌ها به‌جای گیرنده‌ی واقعی به صندوق سایه می‌روند. فقط آموزش دانشکده و مدیر سامانه خروجی را
+    می‌بینند تا آن را با تصمیم واقعی انسان‌ها مقایسه کنند (دستور shadow_report).
+    """
+    return enabled() and settings.AGENTS_SHADOW_MODE
+
+
+def visible_to(user):
+    """آیا خروجی عامل‌ها به این کاربر نمایش داده شود؟ user=None یعنی «بدون محدودیت کاربر»."""
+    if not enabled():
+        return False
+    if not shadow() or user is None:
+        return True
+    return user.is_superuser or user.user_type == UserType.EDU_STAFF
 
 
 def _finish(run, status=None, error="", model=""):
@@ -236,10 +255,16 @@ def _sources(raw):
             for r in rows if r["chunk_id"] in chunks]
 
 
-# ───────────────────────── ۳. عامل پیشنهاد داور ─────────────────────────
+# ───────────────────────── ۳. عامل تطبیق: پیشنهاد داور و استاد راهنما ─────────────────────────
+# هر دو با یک گردش‌کار در n8n انجام می‌شوند (suggest-referees): موضوع و «زمینه‌های تخصصی» اساتید
+# به بردار تبدیل و با شباهت کسینوسی رتبه‌بندی می‌شوند. فرق فقط در «موضوع» و «نامزدها» است و
+# هر دو را پورتال با قواعد قطعی تعیین می‌کند.
 
 TOPIC_EXCERPT_CHARS = 2000
 EXPLAIN_TOP = 5
+MIN_INTERESTS_CHARS = 20
+MAX_INTERESTS_CHARS = 1500
+REFEREE, ADVISOR = SuggestionRun.Purpose.REFEREE, SuggestionRun.Purpose.ADVISOR
 # سطر عنوان «مقدمه»؛ شماره‌ی بخش در متن استخراج‌شده از PDF گاهی به انتهای سطر می‌افتد
 _INTRO_HEADING = re.compile(r"^[\d۰-۹.\-–) ]*مقدمه[\d۰-۹.\-–) ]*$", re.M)
 
@@ -259,42 +284,67 @@ def topic_text(case):
     return "\n".join(p.strip() for p in parts if p and p.strip())
 
 
-def request_referee_suggestions(case):
-    """
-    رتبه‌بندی معنایی داوران واجد شرایط را از n8n می‌خواهد. «واجد شرایط بودن» قاعده‌ی قطعی
-    است و همین‌جا (eligible_referees) تعیین می‌شود؛ n8n فقط همین فهرست را مرتب می‌کند.
-    """
-    run = _restart(SuggestionRun, case=case)
-    candidates = list(wf.eligible_referees(case))
+def candidates_for(case, purpose):
+    """نامزدهای واجد شرایط — قاعده‌ی قطعی پورتال؛ n8n فقط همین فهرست را مرتب می‌کند."""
+    if purpose == ADVISOR:
+        return wf.eligible_advisors().exclude(pk=case.author_id)
+    return wf.eligible_referees(case)
+
+
+def _request_suggestions(case, purpose, query):
+    run = _restart(SuggestionRun, extra={"query": query}, case=case, purpose=purpose)
+    candidates = list(candidates_for(case, purpose))
     if not candidates:
-        return _finish(run, error="در این گروه آموزشی داور واجد شرایطی ثبت نشده است.")
+        return _finish(run, error="استاد واجد شرایطی در سامانه ثبت نشده است.")
     payload = {
         "run_id": run.pk,
+        "purpose": purpose,
+        # n8n نتیجه را به همین مسیر برمی‌گرداند
+        "result_path": reverse("api_referee_suggestions_result", args=[run.pk]),
         "case": {"id": case.pk, "title_fa": case.title_fa, "title_en": case.title_en,
-                 "department": str(case.department)},
-        "query_text": topic_text(case),
-        "candidates": [{"id": u.pk, "name": str(u), "expertise": u.expertise.strip()}
-                       for u in candidates],
+                 "department": str(case.department or "")},
+        "query_text": query,
+        "candidates": [{"id": u.pk, "name": str(u), "department": str(u.department or ""),
+                        "expertise": u.expertise.strip()} for u in candidates],
         "explain_top": EXPLAIN_TOP,
     }
     try:
         n8n.post("suggest-referees", payload)
     except n8n.Unavailable as e:
-        log.warning("suggest-referees: %s", e)
-        return _finish(run, error="سرویس پیشنهاد داور در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
+        log.warning("suggest-referees (%s): %s", purpose, e)
+        return _finish(run, error="سرویس پیشنهاد استاد در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
     return run
+
+
+def request_referee_suggestions(case):
+    """رتبه‌بندی معنایی داوران واجد شرایط (اعضای همان گروه، غیر از راهنما و نویسنده) برای مدیر گروه."""
+    return _request_suggestions(case, REFEREE, topic_text(case))
+
+
+def request_advisor_suggestions(case, interests):
+    """
+    «گفتگوی ساختاریافته»ی بخش ۱ پروپوزال: دانشجو موضوع و علایق پژوهشی‌اش را می‌نویسد و سامانه
+    اساتید را بر پایه‌ی تطبیق با پروفایل تخصصی‌شان رتبه‌بندی می‌کند. انتخاب استاد با خود دانشجوست.
+    """
+    interests = " ".join((interests or "").split())
+    if len(interests) < MIN_INTERESTS_CHARS:
+        raise AgentError("موضوع و علایق پژوهشی خود را دست‌کم در یکی دو جمله بنویسید.")
+    if len(interests) > MAX_INTERESTS_CHARS:
+        raise AgentError(f"متن علایق باید کوتاه‌تر از {fa_digits(MAX_INTERESTS_CHARS)} نویسه باشد.")
+    query = "\n".join(p for p in (case.title_fa, case.title_en, interests) if p)
+    return _request_suggestions(case, ADVISOR, query)
 
 
 def save_referee_suggestions(run, data):
     """
     پاسخ n8n: {"suggestions": [{"referee_id", "score", "reason"}], "model": "..."} یا {"error": "..."}
-    فقط داورانی ذخیره می‌شوند که واقعاً واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال از روی score می‌سازد.
+    فقط اساتیدی ذخیره می‌شوند که واقعاً نامزد واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال از روی score می‌سازد.
     """
     model = str(data.get("model") or "")
     if data.get("error"):
-        log.warning("referee suggestions %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
+        log.warning("suggestions %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
         return _finish(run, error=str(data["error"]), model=model)
-    eligible = set(wf.eligible_referees(run.case).values_list("pk", flat=True))
+    eligible = set(candidates_for(run.case, run.purpose).values_list("pk", flat=True))
     rows = {}
     for s in data.get("suggestions") or []:
         pk = s.get("referee_id") if isinstance(s, dict) else None
@@ -313,30 +363,41 @@ def save_referee_suggestions(run, data):
     return run
 
 
-def suggestion_ranks(case):
-    """{شناسه‌ی داور: رتبه} برای مرتب‌کردن فرم تخصیص داور؛ خالی اگر پیشنهادی آماده نباشد."""
-    if not enabled():
+def suggestion_ranks(case, purpose=REFEREE, user=None):
+    """{شناسه‌ی استاد: رتبه} برای مرتب‌کردن فرم انتخاب؛ خالی اگر پیشنهادی آماده نباشد یا کاربر نبیند."""
+    if not visible_to(user):
         return {}
-    return dict(RefereeSuggestion.objects.filter(run__case=case, run__status=SuggestionRun.Status.DONE)
+    return dict(RefereeSuggestion.objects.filter(run__case=case, run__purpose=purpose,
+                                                 run__status=SuggestionRun.Status.DONE)
                 .values_list("referee_id", "rank"))
 
 
-def suggestion_panel(case):
-    """داده‌ی کادر «پیشنهاد سامانه» در فرم تخصیص داور (یا None اگر عامل‌ها خاموش باشند)."""
-    if not enabled():
+def suggestion_panel(case, purpose=REFEREE, user=None):
+    """داده‌ی کادر «پیشنهاد سامانه» در فرم انتخاب داور / استاد راهنما (یا None اگر نمایش داده نشود)."""
+    if not visible_to(user):
         return None
-    run = SuggestionRun.objects.filter(case=case).first()
-    rows = list(run.suggestions.select_related("referee")) if run else []
-    load = dict(RefereeAssignment.objects.filter(referee__in=[r.referee_id for r in rows])
-                .exclude(case__state__in=sm.TERMINAL_STATES)
-                .values_list("referee").annotate(n=Count("id")))
+    run = SuggestionRun.objects.filter(case=case, purpose=purpose).first()
+    rows = list(run.suggestions.select_related("referee__department")) if run else []
+    # بار کاری: داوری‌های در جریان (برای داور) یا پرونده‌های راهنمایی در جریان (برای استاد راهنما)
+    if purpose == ADVISOR:
+        busy = (ProjectCase.objects.filter(advisor__in=[r.referee_id for r in rows])
+                .exclude(state__in=sm.TERMINAL_STATES).values_list("advisor"))
+    else:
+        busy = (RefereeAssignment.objects.filter(referee__in=[r.referee_id for r in rows])
+                .exclude(case__state__in=sm.TERMINAL_STATES).values_list("referee"))
+    load = dict(busy.annotate(n=Count("id")))
     for row in rows:
         row.load = load.get(row.referee_id, 0)
-    return {"run": run, "rows": rows}
+    return {"run": run, "rows": rows, "purpose": purpose,
+            "template": f"agents/_{purpose}_suggestions.html"}
 
 
 def can_refresh_suggestions(case, user):
     return case.state == State.REFEREE_ASSIGNMENT and CaseRole.HEAD in case.roles_of(user)
+
+
+def can_request_advisor_suggestions(case, user):
+    return case.state == State.ADVISOR_SELECTION and user.id == case.author_id
 
 
 # ───────────────────────── ۴. محرک اطلاع‌رسانی ─────────────────────────
@@ -382,8 +443,11 @@ def _notification(key, user, case, subject, facts, sentences):
     if actions:
         lines.append("اقدام مورد انتظار از شما: " + "، ".join(actions) + ".")
     link = settings.PORTAL_PUBLIC_URL + reverse("case_detail", args=[case.pk])
+    to = user.email
+    if shadow():          # حالت سایه: هیچ ایمیلی به گیرنده‌ی واقعی نمی‌رسد
+        to, subject = settings.AGENTS_SHADOW_MAILBOX, f"[سایه ← {user.email}] {subject}"
     return {
-        "key": key, "to": user.email, "subject": subject[:250],
+        "key": key, "to": to, "subject": subject[:250],
         "facts": {"recipient_name": str(user),
                   "recipient_roles": [r.label for r in sorted(case.roles_of(user))],
                   "case_title": case.title_fa, "case_state": case.get_state_display(),
