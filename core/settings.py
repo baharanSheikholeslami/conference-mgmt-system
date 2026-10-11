@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'workflow',
     'agents',
+    'integration',      # فاز ۴: سناریوهای سرتاسری و گزارش حالت سایه (بدون جدول پایگاه‌داده)
 ]
 
 MIDDLEWARE = [
