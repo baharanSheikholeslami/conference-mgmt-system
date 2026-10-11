@@ -8,6 +8,7 @@ from dataclasses import replace
 from django.test import TestCase, override_settings
 
 from agents import checklist, extract
+from workflow import services as wf
 from workflow.enums import DeadlineKind, State
 from workflow.models import ProjectCase, User
 from workflow.test_services import MEDIA
@@ -73,7 +74,10 @@ class ScenarioTests(TestCase):
         self.assertEqual(scenario_cases().count(), 3)
         self.assertEqual(cleanup(), 3)
         self.assertEqual(ProjectCase.objects.count(), 1)
-        self.assertTrue(User.objects.filter(username__startswith=PREFIX).exists())   # کاربران می‌مانند
+        scenario_users = User.objects.filter(username__startswith=PREFIX)
+        self.assertTrue(scenario_users.exists())                      # کاربران برای اجرای بعد می‌مانند…
+        self.assertFalse(scenario_users.filter(is_active=True).exists())  # …اما غیرفعال
+        self.assertFalse(wf.eligible_advisors().filter(username__startswith=PREFIX).exists())
 
     def test_reports(self):
         results = self.run_scenarios([BY_KEY["cancel"]])

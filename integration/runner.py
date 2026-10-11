@@ -36,7 +36,7 @@ from . import documents
 from .scenarios import GUARD, NOT_ALLOWED, SCENARIOS, Scenario, Step
 
 PREFIX = "e2e_"
-DEPARTMENT = "گروه آزمایشی سناریوها"
+DEPARTMENT = "سناریوهای آزمایشی"
 TITLE_TAG = "[سناریو] "
 
 # بازیگران ثابت همه‌ی سناریوها (نویسنده برای هر سناریو جدا ساخته می‌شود)
@@ -255,7 +255,7 @@ class Runner:
                     run = SuggestionRun.objects.filter(case=case, purpose="referee").first()
                     if run:
                         self._observe_suggestions(result, run, "پیشنهاد داور",
-                                                  scenario.referee_expert or None)
+                                                  people.get(scenario.referee_expert))
 
         res.ok = res.got == expected or step.expect is None and not res.detail
         if res.ok and step.check is not None:
@@ -375,7 +375,10 @@ def scenario_cases():
 
 
 def cleanup():
-    """پرونده‌های سناریو (و فایل‌هایشان) را پاک می‌کند؛ کاربران سناریو برای اجرای بعد می‌مانند."""
+    """
+    پرونده‌های سناریو (و فایل‌هایشان) را پاک و کاربران سناریو را غیرفعال می‌کند تا در فهرست
+    استادان واجد شرایط برای دانشجویان واقعی دیده نشوند. اجرای بعدی دوباره فعالشان می‌کند.
+    """
     cases = list(scenario_cases())
     for case in cases:
         for version in case.versions.all():
@@ -384,4 +387,5 @@ def cleanup():
         # Review.version از نوع PROTECT است؛ پس اول رأی‌ها، بعد پرونده‌ها (و به‌تبع نسخه‌ها و رویدادها)
         Review.objects.filter(assignment__case__in=scenario_cases()).delete()
         deleted = scenario_cases().delete()[1].get("workflow.ProjectCase", 0)
+        User.objects.filter(username__startswith=PREFIX).update(is_active=False)
     return deleted
