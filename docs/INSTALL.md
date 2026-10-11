@@ -58,7 +58,15 @@ ollama list               # هر دو باید در فهرست باشند
 
 مدل‌های بزرگ‌تر از ۸ میلیارد پارامتر روی ۱۶ گیگابایت کند می‌شوند و توصیه نمی‌شوند.
 
-> اگر `ollama pull` با خطای `operation timed out` روی `registry.ollama.ai` متوقف شد، دسترسی شبکه به مخزن Ollama بسته است. با VPN دوباره امتحان کنید. پس از دانلود، اجرای مدل به اینترنت نیاز ندارد.
+> اگر `ollama pull` با خطای `operation timed out` روی `registry.ollama.ai` متوقف شد، دسترسی شبکه به مخزن Ollama بسته است. یا با VPN دوباره امتحان کنید، یا همان مدل را از Hugging Face بگیرید و با نام معمولش ثبت کنید (روی مک پروژه همین روش جواب داد):
+>
+> ```bash
+> ollama pull hf.co/ggml-org/gemma-3-4b-it-GGUF:Q4_K_M
+> ollama cp hf.co/ggml-org/gemma-3-4b-it-GGUF:Q4_K_M gemma3:4b
+> ollama rm hf.co/ggml-org/gemma-3-4b-it-GGUF:Q4_K_M      # فقط نام اضافه پاک می‌شود، نه خود مدل
+> ```
+>
+> پس از دانلود، اجرای مدل به اینترنت نیاز ندارد.
 
 آزمایش سریع:
 
@@ -222,7 +230,7 @@ LLM_CHAT_MODEL=gpt-4o-mini
 | n8n هنوز مدل یا تنظیمات قبلی را به کار می‌برد | `docker compose up -d` (فقط restart کافی نیست؛ متغیرهای `.env` هنگام ساختن کانتینر خوانده می‌شوند) |
 | همه‌ی عامل‌ها «بی‌پاسخ» می‌مانند یا `ECONNREFUSED …:8000` در `docker compose logs n8n` | سرور جنگو خاموش است. اجرا کنید `python manage.py runserver 0.0.0.0:8000` |
 | `agents_check` می‌گوید مدلی در Ollama نیست | `ollama pull <نام مدل>`؛ نام باید دقیقاً با `.env` یکی باشد |
-| `ollama pull` با timeout متوقف می‌شود | دسترسی به `registry.ollama.ai` بسته است؛ با VPN دوباره امتحان کنید |
+| `ollama pull` با timeout متوقف می‌شود | دسترسی به `registry.ollama.ai` بسته است؛ با VPN یا از Hugging Face (بخش ۲-۲) |
 | اعتبارسنجی سند تقریباً همه‌ی بخش‌ها را «پیدا نشد» می‌گوید | مدل گفتگو خیلی کوچک است (مثلاً `gemma3:1b`)؛ به `gemma3:4b` یا `qwen2.5:7b` بروید |
 | خطای `HTTP 404` از Webhook | گردش‌کار فعال نیست: `bash n8n/import.sh` |
 | خطای `Unauthorized` در اجرای n8n | `AGENT_TOKEN` پس از تغییر به کانتینر نرسیده: `docker compose up -d` |

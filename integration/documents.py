@@ -88,8 +88,8 @@ def _body(topic, key):
     }[key]
 
 
-def proposal_docx(topic="llm_agents", variant="complete", student="دانشجوی آزمایشی",
-                  student_number="۴۰۰۳۹۹۹۹", advisor="استاد راهنمای آزمایشی"):
+def proposal_docx(topic="llm_agents", variant="complete", student="سارا احمدی",
+                  student_number="۴۰۰۳۹۹۹۹", advisor="دکتر رضا محمدی"):
     """یک فرم پیشنهاد پروژه به قالب DOCX؛ خروجی آماده‌ی بارگذاری (SimpleUploadedFile)."""
     from docx import Document
 
