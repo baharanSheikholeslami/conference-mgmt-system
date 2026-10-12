@@ -4,19 +4,19 @@
 {% block content %}
 <a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>
 
-<section class="card">
+<section class="card case-hero">
   <div class="page-head">
     <div>
       <h1>{{ case.title_fa }}</h1>
-      {% if case.title_en %}<div class="muted ltr">{{ case.title_en }}</div>{% endif %}
+      {% if case.title_en %}<div class="muted ltr sub">{{ case.title_en }}</div>{% endif %}
     </div>
     {% include "workflow/_state_badge.html" %}
   </div>
   {% if stage %}
-    <div class="progress" role="img" aria-label="پیشرفت پرونده"><span style="width: {{ progress }}%"></span></div>
-    <small>مرحله‌ی {{ stage|fa }} از {{ stage_count|fa }}</small>
+    <div class="progress" role="progressbar" aria-label="پیشرفت پرونده" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress }}"><span style="width: {{ progress }}%"></span></div>
+    <div class="progress-label"><span>مرحله‌ی {{ stage|fa }} از {{ stage_count|fa }}</span><span>{{ progress|fa }}٪</span></div>
   {% endif %}
-  <div>نقش شما در این پرونده:
+  <div class="roles"><span>نقش شما در این پرونده:</span>
     {% for role in roles %}<span class="badge plain">{{ role }}</span> {% empty %}<span class="muted">فقط مشاهده</span>{% endfor %}
   </div>
 </section>
@@ -27,14 +27,14 @@
   <div class="actions">
     {% for offer in offers %}
       {% if offer.blocked %}
-        <span class="btn disabled" aria-disabled="true">{{ offer.transition.label }}</span>
+        <span class="btn disabled" role="link" aria-disabled="true">{{ offer.transition.label }}</span>
         <span class="why">{{ offer.blocked }}</span>
       {% else %}
         <a class="btn" href="{% url 'case_action' case.pk offer.transition.action %}">{{ offer.transition.label }}</a>
       {% endif %}
     {% endfor %}
     {% if upload_kind %}<a class="btn secondary" href="{% url 'document_upload' case.pk %}">بارگذاری {% if upload_kind == "thesis" %}پایان‌نامه{% else %}پیشنهاد{% endif %}</a>{% endif %}
-    {% if can_edit %}<a class="btn secondary" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
+    {% if can_edit %}<a class="btn ghost" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
     {% if cancel_offer %}<a class="btn danger" href="{% url 'case_action' case.pk 'cancel' %}">{{ cancel_offer.transition.label }}</a>{% endif %}
   </div>
 </section>

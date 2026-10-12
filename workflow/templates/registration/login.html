@@ -2,14 +2,21 @@
 {% block title %}ورود{% endblock %}
 {% block main_class %}narrow{% endblock %}
 {% block content %}
-<div class="card">
-  <h1>ورود به سامانه</h1>
-  <p class="muted">با حساب کاربری دانشگاهی خود وارد شوید. نقش شما در هر پرونده (نویسنده، استاد راهنما، داور، مدیر گروه یا آموزش) خودکار تشخیص داده می‌شود.</p>
-  <form method="post" class="stack">
-    {% csrf_token %}
-    {{ form.as_div }}
-    <input type="hidden" name="next" value="{{ next }}">
-    <button class="btn" type="submit">ورود</button>
-  </form>
+<div class="auth">
+  <div class="card">
+    <div class="auth-head">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2.5 9 2.5 12 0v-5"/></svg>
+      </div>
+      <h1>ورود به سامانه</h1>
+      <p class="muted">با حساب کاربری دانشگاهی خود وارد شوید. نقش شما در هر پرونده (نویسنده، استاد راهنما، داور، مدیر گروه یا آموزش) خودکار تشخیص داده می‌شود.</p>
+    </div>
+    <form method="post" class="stack">
+      {% csrf_token %}
+      {{ form.as_div }}
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn" type="submit">ورود</button>
+    </form>
+  </div>
 </div>
 {% endblock %}
