@@ -13,7 +13,7 @@
     {{ form.as_div }}
     <div class="actions">
       <button class="btn{% if danger %} danger solid{% endif %}" type="submit">{{ submit_label }}</button>
-      <a class="btn secondary" href="{% if case %}{% url 'case_detail' case.pk %}{% else %}{% url 'dashboard' %}{% endif %}">انصراف</a>
+      <a class="btn ghost" href="{% if case %}{% url 'case_detail' case.pk %}{% else %}{% url 'dashboard' %}{% endif %}">انصراف</a>
     </div>
   </form>
 </div>

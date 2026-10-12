@@ -3,26 +3,48 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#ffffff">
   <title>{% block title %}سامانه مدیریت پروژه کارشناسی{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'workflow/style.css' %}">
   <link rel="stylesheet" href="{% static 'agents/agents.css' %}">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="{% url 'dashboard' %}">سامانه مدیریت پروژه کارشناسی</a>
-    {% if user.is_authenticated %}
-      <div class="who">
-        <span>{{ user }} <small>({{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %})</small></span>
-        <a href="{% url 'password_change' %}">تغییر رمز</a>
-        {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
-        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">خروج</button></form>
-      </div>
-    {% endif %}
+  <a class="skip-link" href="#content">پرش به محتوای صفحه</a>
+  <header class="appbar">
+    <div class="appbar-inner">
+      <a class="brand" href="{% url 'dashboard' %}">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2.5 9 2.5 12 0v-5"/></svg>
+        </span>
+        <span class="brand-text">
+          <strong>مدیریت پروژه‌ی کارشناسی</strong>
+          <small>دانشکده مهندسی کامپیوتر</small>
+        </span>
+      </a>
+      {% if user.is_authenticated %}
+        <nav class="account" aria-label="حساب کاربری">
+          <div class="user-chip">
+            <span class="avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1" }}</span>
+            <span class="user-meta">
+              <strong>{{ user }}</strong>
+              <small>{{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %}</small>
+            </span>
+          </div>
+          <a class="btn ghost compact" href="{% url 'password_change' %}">تغییر رمز</a>
+          {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
+          <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn secondary compact" type="submit">خروج</button></form>
+        </nav>
+      {% endif %}
+    </div>
   </header>
-  <main class="{% block main_class %}{% endblock %}">
-    {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+  <main id="content" class="{% block main_class %}{% endblock %}">
+    {% if messages %}<div role="status" aria-live="polite">
+      {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+    </div>{% endif %}
     {% block content %}{% endblock %}
   </main>
+  <footer class="site-footer">پروژه‌ی کارشناسی — دانشگاه صنعتی امیرکبیر</footer>
   {% assistant_widget %}
 </body>
 </html>
