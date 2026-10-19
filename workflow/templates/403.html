@@ -2,7 +2,8 @@
 {% block title %}دسترسی مجاز نیست{% endblock %}
 {% block main_class %}narrow{% endblock %}
 {% block content %}
-<div class="card">
+<div class="card state-page">
+  <div class="glyph" aria-hidden="true">403</div>
   <h1>این اقدام برای شما مجاز نیست</h1>
   <p class="muted">یا نقش لازم را در این پرونده ندارید، یا پرونده دیگر در وضعیتی نیست که این اقدام ممکن باشد.</p>
   <a class="btn" href="{% url 'dashboard' %}">بازگشت به داشبورد</a>

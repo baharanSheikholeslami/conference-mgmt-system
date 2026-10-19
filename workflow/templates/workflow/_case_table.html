@@ -1,5 +1,5 @@
 {% load portal %}
-<div class="table-wrap">
+<div class="table-wrap stacked">
 <table>
   <thead>
     <tr><th>عنوان پروژه</th><th>نویسنده</th><th>نقش شما</th><th>وضعیت</th><th>اقدام شما</th><th>نزدیک‌ترین مهلت</th></tr>
@@ -7,15 +7,17 @@
   <tbody>
   {% for row in rows %}
     <tr>
-      <td><a href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
-      <td>{{ row.case.author }}</td>
-      <td>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</td>
-      <td>{% include "workflow/_state_badge.html" with case=row.case %}</td>
-      <td>{% for offer in row.todo %}{{ offer.transition.label }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</td>
-      <td>
+      <td><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td data-label="نویسنده">{{ row.case.author }}</td>
+      <td data-label="نقش شما"><span>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</span></td>
+      <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=row.case %}</td>
+      <td data-label="اقدام شما"><span>{% for offer in row.todo %}{{ offer.transition.label }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</span></td>
+      <td data-label="نزدیک‌ترین مهلت">
         {% if row.deadline %}
+          <span>
           <span{% if row.deadline.is_overdue %} class="overdue"{% endif %}>{{ row.deadline.due_date|jalali }}{% if row.deadline.is_overdue %} (گذشته){% endif %}</span><br>
           <small>{{ row.deadline.get_kind_display }}</small>
+          </span>
         {% else %}—{% endif %}
       </td>
     </tr>
