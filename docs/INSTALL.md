@@ -123,21 +123,23 @@ docker compose ps        # سه سرویس db، n8n و mailpit باید Up با�
 ```bash
 python manage.py migrate
 python manage.py seed_demo            # کاربران و سه پرونده‌ی نمونه
-python manage.py seed_demo --full     # (اختیاری) به‌علاوه‌ی student4 تا student12، هر کدام با پرونده‌ای در یک وضعیت میانی
+python manage.py seed_demo --full     # (اختیاری) به‌علاوه‌ی نُه دانشجو با پرونده در وضعیت‌های میانی
 python manage.py createsuperuser      # حساب ادمین خودتان
 ```
 
-کاربران نمونه (رمز همه `test1234`):
+کاربران نمونه (رمز همه `test1234`؛ جدول کامل با عنوان پروژه‌ها و وضعیت پرونده‌ها در `docs/test-guide-fa.md`):
 
-| نام کاربری | نقش |
-|---|---|
-| `student1`، `student2`، `student3` | دانشجو (`student2` پرونده ندارد؛ برای آزمودن از صفر) |
-| `student4` تا `student12` | دانشجو؛ فقط با `--full` ساخته می‌شوند و هر کدام پرونده‌ای در یکی از وضعیت‌های میانی دارند (راهنما در `docs/test-guide-fa.md`) |
-| `external1` | نویسنده غیردانشجو |
-| `advisor1` | استاد راهنما |
-| `referee1`، `referee2` | داور |
-| `head1` | مدیر گروه |
-| `edu1` | کارشناس آموزش دانشکده |
+| نام کاربری | نام | نقش |
+|---|---|---|
+| `sara.nouri` | سارا نوری | دانشجو، **بدون پرونده**؛ برای سناریوی کامل از صفر |
+| `baharan.sheikholeslami` | بهاران شیخ‌الاسلامی | دانشجو، پرونده «تدوین پیشنهاد» |
+| `amir.hosseini` | امیر حسینی | دانشجو، روز دفاعش امروز است؛ برای ثبت نمره |
+| `kamran.shirazi` | کامران شیرازی | نویسنده غیردانشجو |
+| `mahsa.rahimi`، `reza.sadeghi`، `niloofar.kazemi`، `pouria.abbasi`، `elaheh.jafari`، `mohammad.taheri`، `fatemeh.mousavi`، `alireza.niknam`، `zahra.babaei` | | دانشجو؛ فقط با `--full`، هر کدام در یک وضعیت میانی |
+| `soleiman.fallah` | دکتر سلیمان فلاح | استاد راهنما |
+| `mehdi.zakeri`، `narges.rezaei`، `parisa.karimi`، `hossein.mousavi` | دکتر ذاکری، رضایی، کریمی، موسوی | داور |
+| `ali.ahmadi` | دکتر علی احمدی | مدیر گروه |
+| `maryam.salehi` | مریم صالحی | کارشناس آموزش دانشکده |
 
 ## ۷. گردش‌کارهای n8n
 
@@ -184,7 +186,7 @@ python manage.py run_scenarios --live --report docs/reports   # اجرای زن�
 
 اجرای زنده به روشن بودن همه‌چیز (بخش ۵ تا ۸) نیاز دارد. با `gemma3:4b` چند دقیقه طول می‌کشد. گزارش Markdown و JSON آن در `docs/reports` ذخیره می‌شود. برای دیدن پرونده‌های سناریو در پورتال `--keep` را اضافه کنید و بعد با `python manage.py run_scenarios --cleanup` پاکشان کنید.
 
-**اجرای سایه (Shadow Mode):** در `.env` بنویسید `AGENTS_SHADOW_MODE=True`، سرور را از نو اجرا و `docker compose up -d` را بزنید. از این پس عامل‌ها کار می‌کنند ولی فقط `edu1` و ادمین خروجی‌شان را می‌بینند و همه‌ی ایمیل‌ها به `shadow@example.com` می‌روند. پس از یک دوره کار واقعی:
+**اجرای سایه (Shadow Mode):** در `.env` بنویسید `AGENTS_SHADOW_MODE=True`، سرور را از نو اجرا و `docker compose up -d` را بزنید. از این پس عامل‌ها کار می‌کنند ولی فقط `maryam.salehi` و ادمین خروجی‌شان را می‌بینند و همه‌ی ایمیل‌ها به `shadow@example.com` می‌روند. پس از یک دوره کار واقعی:
 
 ```bash
 python manage.py shadow_report --output docs/reports/shadow.md
