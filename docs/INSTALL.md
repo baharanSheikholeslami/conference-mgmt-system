@@ -123,6 +123,7 @@ docker compose ps        # سه سرویس db، n8n و mailpit باید Up با�
 ```bash
 python manage.py migrate
 python manage.py seed_demo            # کاربران و سه پرونده‌ی نمونه
+python manage.py seed_demo --full     # (اختیاری) به‌علاوه‌ی student4 تا student12، هر کدام با پرونده‌ای در یک وضعیت میانی
 python manage.py createsuperuser      # حساب ادمین خودتان
 ```
 
@@ -131,6 +132,7 @@ python manage.py createsuperuser      # حساب ادمین خودتان
 | نام کاربری | نقش |
 |---|---|
 | `student1`، `student2`، `student3` | دانشجو (`student2` پرونده ندارد؛ برای آزمودن از صفر) |
+| `student4` تا `student12` | دانشجو؛ فقط با `--full` ساخته می‌شوند و هر کدام پرونده‌ای در یکی از وضعیت‌های میانی دارند (راهنما در `docs/test-guide-fa.md`) |
 | `external1` | نویسنده غیردانشجو |
 | `advisor1` | استاد راهنما |
 | `referee1`، `referee2` | داور |

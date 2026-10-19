@@ -1,11 +1,13 @@
 """آزمون‌های پورتال (ورود، داشبورد، فرم‌ها و کنترل دسترسی) با کلاینت آزمون جنگو."""
-from django.test import override_settings
+from io import StringIO
+
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import rules, services
 from .enums import DocKind, ReviewDecision, State
 from .jalali import parse_jalali, to_jalali
-from .models import ProjectCase
+from .models import ProjectCase, User
 from .test_services import MEDIA, WorkflowTestCase, pdf
 
 
@@ -223,3 +225,33 @@ class JalaliTests(PortalTestCase):
         for bad in ("1405/13/01", "abc", "1405/07", ""):
             with self.assertRaises(ValueError):
                 parse_jalali(bad)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class SeedDemoFullTests(TestCase):
+    """seed_demo --full: برای هر وضعیت میانی یک پرونده‌ی آماده، و اجرای دوباره بی‌اثر است."""
+
+    def run_seed(self, *args):
+        from django.core.management import call_command
+        call_command("seed_demo", *args, stdout=StringIO())
+
+    def test_full_seed_covers_every_waiting_state_and_is_idempotent(self):
+        self.run_seed()
+        base = ProjectCase.objects.count()
+        self.run_seed("--full")
+        self.run_seed("--full")
+        states = set(ProjectCase.objects.values_list("state", flat=True))
+        self.assertEqual(ProjectCase.objects.count(), base + 9)
+        self.assertEqual(states, set(State) - {State.ADVISOR_SELECTION, State.COMPLETED,
+                                                 State.REJECTED, State.CANCELLED})
+
+    def test_every_seeded_case_offers_its_role_an_action(self):
+        from workflow import services
+        self.run_seed("--full")
+        edu, head = User.objects.get(username="edu1"), User.objects.get(username="head1")
+        advisor, ref = User.objects.get(username="advisor1"), User.objects.get(username="referee1")
+        for case in ProjectCase.objects.exclude(author__username__in=["student1", "external1"]):
+            actors = [case.author, advisor, head, edu, ref]
+            todo = [u.username for u in actors
+                    if any(o.pending for o in services.available_actions(case, u))]
+            self.assertTrue(todo, f"{case.state}: هیچ نقشی کاری ندارد")
