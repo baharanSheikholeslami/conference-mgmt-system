@@ -1,11 +1,15 @@
 """آزمون‌های پورتال (ورود، داشبورد، فرم‌ها و کنترل دسترسی) با کلاینت آزمون جنگو."""
-from django.test import override_settings
+from datetime import timedelta
+from pathlib import Path
+from io import StringIO
+
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import rules, services
 from .enums import DocKind, ReviewDecision, State
 from .jalali import parse_jalali, to_jalali
-from .models import ProjectCase
+from .models import ProjectCase, User
 from .test_services import MEDIA, WorkflowTestCase, pdf
 
 
@@ -223,3 +227,112 @@ class JalaliTests(PortalTestCase):
         for bad in ("1405/13/01", "abc", "1405/07", ""):
             with self.assertRaises(ValueError):
                 parse_jalali(bad)
+
+
+@override_settings(MEDIA_ROOT=MEDIA)
+class SeedDemoFullTests(TestCase):
+    """seed_demo --full: برای هر وضعیت میانی یک پرونده‌ی آماده، و اجرای دوباره بی‌اثر است."""
+
+    def run_seed(self, *args):
+        from django.core.management import call_command
+        call_command("seed_demo", *args, stdout=StringIO())
+
+    def test_full_seed_covers_every_waiting_state_and_is_idempotent(self):
+        self.run_seed()
+        base = ProjectCase.objects.count()
+        self.run_seed("--full")
+        self.run_seed("--full")
+        states = set(ProjectCase.objects.values_list("state", flat=True))
+        self.assertEqual(ProjectCase.objects.count(), base + 9)
+        self.assertEqual(states, set(State) - {State.ADVISOR_SELECTION, State.COMPLETED,
+                                                 State.REJECTED, State.CANCELLED})
+
+    def test_every_seeded_case_offers_its_role_an_action(self):
+        from workflow import services
+        self.run_seed("--full")
+        edu, head = User.objects.get(username="maryam.salehi"), User.objects.get(username="ali.ahmadi")
+        advisor, ref = User.objects.get(username="soleiman.fallah"), User.objects.get(username="mehdi.zakeri")
+        for case in ProjectCase.objects.exclude(author__username__in=["baharan.sheikholeslami", "kamran.shirazi"]):
+            actors = [case.author, advisor, head, edu, ref]
+            todo = [u.username for u in actors
+                    if any(o.pending for o in services.available_actions(case, u))]
+            self.assertTrue(todo, f"{case.state}: هیچ نقشی کاری ندارد")
+
+
+@override_settings(MEDIA_ROOT=MEDIA, DEBUG=True)
+class BackdateCaseTests(TestCase):
+    """backdate_case: پس از تصویب نهایی، دفاع در همان روز قابل‌زمان‌بندی و ثبت نمره است."""
+
+    def test_backdating_unlocks_same_day_defense_and_grading(self):
+        from django.core.management import CommandError, call_command
+        from django.utils import timezone
+        call_command("seed_demo", "--full", stdout=StringIO())
+        case = ProjectCase.objects.get(author__username="fatemeh.mousavi")   # در حال اجرای پروژه
+        today = timezone.localdate()
+        self.assertEqual(case.final_approved_at, today - timedelta(days=3))
+        call_command("backdate_case", str(case.pk), "--days", "120", stdout=StringIO())
+        case.refresh_from_db()
+        self.assertEqual(case.final_approved_at, today - timedelta(days=123))
+        with override_settings(DEBUG=False), self.assertRaises(CommandError):
+            call_command("backdate_case", str(case.pk), stdout=StringIO())
+
+
+@override_settings(MEDIA_ROOT=MEDIA, DEBUG=True)
+class GuideScenarioTests(TestCase):
+    """
+    همان سناریوی کامل «سارا نوری» در docs/test-guide-fa.md، با کلاینت وب و فایل‌های docs/samples،
+    از ثبت پرونده تا نمره. اگر راهنما و برنامه از هم جدا شوند، این آزمون می‌شکند.
+    """
+
+    SAMPLES = Path(__file__).resolve().parent.parent / "docs" / "samples"
+
+    def act(self, username, case, action, **data):
+        self.client.force_login(User.objects.get(username=username))
+        response = self.client.post(reverse("case_action", args=[case.pk, action]), data)
+        self.assertEqual(response.status_code, 302, f"{username}/{action}: {response.content.decode()[:300]}")
+
+    def upload(self, username, case, filename):
+        self.client.force_login(User.objects.get(username=username))
+        with open(self.SAMPLES / filename, "rb") as f:
+            response = self.client.post(reverse("document_upload", args=[case.pk]), {"file": f})
+        self.assertEqual(response.status_code, 302, response.content.decode()[:300])
+
+    def test_full_flow_from_scratch_to_grade(self):
+        from django.core.management import call_command
+        from django.utils import timezone
+        call_command("seed_demo", stdout=StringIO())
+        sara = User.objects.get(username="sara.nouri")
+        fallah = User.objects.get(username="soleiman.fallah")
+        mousavi = User.objects.get(username="hossein.mousavi")
+
+        self.client.force_login(sara)
+        self.client.post(reverse("case_create"), {
+            "title_fa": "دستیار هوشمند پاسخ‌گویی به آیین‌نامه‌های آموزشی با مدل‌های زبانی بزرگ",
+            "title_en": "An LLM-based Assistant for Answering Academic Regulation Questions",
+            "academic_year": rules.current_term(timezone.localdate())[0],
+            "semester": rules.current_term(timezone.localdate())[1]})
+        case = ProjectCase.objects.get(author=sara)
+        self.assertEqual(case.state, State.ADVISOR_SELECTION)
+
+        self.act("sara.nouri", case, "select_advisor", advisor=fallah.pk)
+        self.upload("sara.nouri", case, "proposal-sara-nouri.docx")
+        self.act("sara.nouri", case, "submit_proposal")
+        self.act("soleiman.fallah", case, "advisor_approve")
+        self.act("maryam.salehi", case, "edu_register")
+        self.act("ali.ahmadi", case, "assign_referees", referees=[mousavi.pk])
+        self.act("hossein.mousavi", case, "submit_review", decision="approve")
+        self.act("ali.ahmadi", case, "group_approve")
+        self.act("maryam.salehi", case, "council_approve")
+        case.refresh_from_db()
+        self.assertEqual(case.state, State.IN_PROGRESS)
+
+        self.upload("sara.nouri", case, "thesis-sara-nouri.docx")
+        self.act("sara.nouri", case, "submit_thesis")
+        self.act("soleiman.fallah", case, "thesis_approve")
+
+        call_command("backdate_case", str(case.pk), "--days", "120", stdout=StringIO())
+        self.act("maryam.salehi", case, "schedule_defense",
+                 defense_date=to_jalali(timezone.localdate(), fa=False), defense_place="کلاس ۲۰۱ دانشکده")
+        self.act("soleiman.fallah", case, "record_result", grade="18.5")
+        case.refresh_from_db()
+        self.assertEqual((case.state, float(case.grade)), (State.COMPLETED, 18.5))
