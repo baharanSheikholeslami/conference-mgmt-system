@@ -97,6 +97,15 @@ def last_event_late(expected):
     return check
 
 
+def has_feedback(text):
+    def check(case):
+        from workflow import services
+        feedback = services.pending_feedback(case)
+        shown = [i["note"] for i in feedback["items"]] if feedback else []
+        return "" if text in shown else f"نظر بازگشت دیده نمی‌شود: {shown}"
+    return check
+
+
 def counts(versions=None, reviews=None):
     def check(case):
         from workflow.models import Review
@@ -125,14 +134,15 @@ SCENARIOS = [
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
             S(0, "@author", "advisor_suggest", {"interests": INTERESTS_AI, "expect_top": "@advisor"}),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(2, "@author", "upload_proposal", {"variant": "complete"}),
             S(2, "@author", "submit_proposal", expect=State.ADVISOR_REVIEW),
             S(4, "@advisor", "advisor_approve", expect=State.EDU_REGISTRATION),
             S(6, "@edu", "edu_register", expect=State.REFEREE_ASSIGNMENT, check=last_event_late(False)),
             S(8, "@head", "assign_referees", {"referees": ["@ref_ai"]}, State.REFEREE_REVIEW),
-            S(20, "@ref_ai", "submit_review", {"decision": APPROVE}, State.GROUP_APPROVAL),
-            S(25, "@head", "group_approve", expect=State.COUNCIL_APPROVAL, check=last_event_late(False)),
+            S(20, "@ref_ai", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL,
+              check=last_event_late(False)),
             S(30, "@edu", "council_approve", expect=State.IN_PROGRESS),
             S(100, "@author", "upload_thesis"),
             S(100, "@author", "submit_thesis", expect=State.THESIS_ADVISOR_REVIEW),
@@ -148,7 +158,8 @@ SCENARIOS = [
         description="نسخه‌ی اول ناقص است (بدون «روش ارزیابی»)، استاد راهنما برمی‌گرداند، داور اصلاح می‌خواهد.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(3, "@author", "upload_proposal", {"variant": "no_evaluation"}),
             S(3, "@author", "submit_proposal", expect=State.ADVISOR_REVIEW),
             S(5, "@advisor", "advisor_return", {"note": "بخش روش ارزیابی را اضافه کنید."}, State.DRAFTING),
@@ -162,9 +173,8 @@ SCENARIOS = [
             S(31, "@author", "resubmit_proposal", expect=GUARD, note="بدون نسخه‌ی تازه رد می‌شود"),
             S(35, "@author", "upload_proposal", {"variant": "complete"}),
             S(35, "@author", "resubmit_proposal", expect=State.REFEREE_REVIEW),
-            S(40, "@ref_db", "submit_review", {"decision": APPROVE}, State.GROUP_APPROVAL,
+            S(40, "@ref_db", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL,
               check=counts(versions=3, reviews=2)),
-            S(42, "@head", "group_approve", expect=State.COUNCIL_APPROVAL),
             S(45, "@edu", "council_approve", expect=State.IN_PROGRESS),
         )),
     Scenario(
@@ -172,7 +182,8 @@ SCENARIOS = [
         description="استثنای آیین‌نامه: حداقل دو داور لازم است و نویسنده مشمول نمره‌دهی نیست.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(1, "@author", "upload_proposal", {"variant": "complete"}),
             S(1, "@author", "submit_proposal", expect=State.ADVISOR_REVIEW),
             S(2, "@advisor", "advisor_approve", expect=State.EDU_REGISTRATION),
@@ -181,8 +192,7 @@ SCENARIOS = [
             S(4, "@head", "assign_referees", {"referees": ["@ref_ai", "@ref_db"]}, State.REFEREE_REVIEW),
             S(10, "@ref_ai", "submit_review", {"decision": APPROVE}, State.REFEREE_REVIEW,
               note="تا رأی داور دوم، وضعیت تغییر نمی‌کند"),
-            S(12, "@ref_db", "submit_review", {"decision": APPROVE}, State.GROUP_APPROVAL),
-            S(14, "@head", "group_approve", expect=State.COUNCIL_APPROVAL),
+            S(12, "@ref_db", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL),
             S(15, "@edu", "council_approve", expect=State.IN_PROGRESS),
             S(90, "@author", "upload_thesis"),
             S(90, "@author", "submit_thesis", expect=State.THESIS_ADVISOR_REVIEW),
@@ -193,19 +203,24 @@ SCENARIOS = [
             S(defense_day, "@advisor", "record_result", expect=State.COMPLETED, check=not_graded),
         )),
     Scenario(
-        "group_reject", "رد پیشنهاد در گروه و ثبت دوباره", "student", "databases",
-        description="پس از رد در گروه، دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه ثبت کند.",
+        "council_reject", "رد پیشنهاد در شورا و ثبت دوباره", "student", "databases",
+        description="پس از رد در شورای دانشکده، دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه ثبت کند.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_decline", expect=GUARD, note="رد درخواست بدون توضیح ممکن نیست"),
+            S(0, "@advisor", "advisor_decline", {"note": "این هفته ظرفیت راهنمایی ندارم."}, State.ADVISOR_SELECTION,
+              check=has_feedback("این هفته ظرفیت راهنمایی ندارم."), note="دانشجو دلیل را در پرونده می‌بیند"),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(1, "@author", "upload_proposal", {"variant": "complete"}),
             S(1, "@author", "submit_proposal", expect=State.ADVISOR_REVIEW),
             S(2, "@advisor", "advisor_approve", expect=State.EDU_REGISTRATION),
             S(3, "@edu", "edu_register", expect=State.REFEREE_ASSIGNMENT),
             S(4, "@head", "assign_referees", {"referees": ["@ref_net"]}, State.REFEREE_REVIEW),
-            S(15, "@ref_net", "submit_review", {"decision": APPROVE}, State.GROUP_APPROVAL),
-            S(20, "@head", "group_reject", expect=GUARD, note="رد بدون توضیح ممکن نیست"),
-            S(20, "@head", "group_reject", {"note": "موضوع با برنامه‌ی گروه هم‌خوان نیست."}, State.REJECTED),
+            S(15, "@ref_net", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL),
+            S(20, "@edu", "council_reject", expect=GUARD, note="رد بدون توضیح ممکن نیست"),
+            S(20, "@edu", "council_reject", {"note": "موضوع با برنامه‌ی دانشکده هم‌خوان نیست."}, State.REJECTED),
             S(21, "@author", "create", expect=State.ADVISOR_SELECTION, note="پرونده‌ی تازه در همان نیم‌سال"),
         )),
     Scenario(
@@ -213,7 +228,8 @@ SCENARIOS = [
         description="یادآوری‌ها دقیقاً در ۱۴، ۷ و ۰ روز مانده و پس از مهلت صادر می‌شوند؛ تحویل دیرهنگام ثبت می‌شود.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(deadline_day(K.PROPOSAL_SUBMISSION, -20), "@author", "reminders", {"expect": {}},
               note="۲۰ روز مانده: هنوز زود است"),
             S(deadline_day(K.PROPOSAL_SUBMISSION, -14), "@author", "reminders",
@@ -244,7 +260,8 @@ SCENARIOS = [
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
             S(0, "@edu", "select_advisor", {"advisor": "@advisor"}, NOT_ALLOWED, note="فقط خود دانشجو"),
             S(0, "@author", "select_advisor", {"advisor": "@edu"}, GUARD, note="کارشناس آموزش استاد نیست"),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(1, "@author", "submit_proposal", expect=GUARD, note="بدون فایل پیشنهاد"),
             S(1, "@author", "upload_proposal", {"variant": "complete"}),
             S(1, "@author", "submit_proposal", expect=State.ADVISOR_REVIEW),
@@ -256,9 +273,8 @@ SCENARIOS = [
             S(4, "@head", "assign_referees", {"referees": ["@ref_db"]}, State.REFEREE_REVIEW),
             S(9, "@ref_net", "submit_review", {"decision": APPROVE}, NOT_ALLOWED, note="داور این پرونده نیست"),
             S(9, "@ref_db", "submit_review", {"decision": REVISE}, GUARD, note="«اصلاح» بدون نظر مکتوب"),
-            S(9, "@ref_db", "submit_review", {"decision": APPROVE}, State.GROUP_APPROVAL),
-            S(10, "@edu", "group_approve", expect=NOT_ALLOWED, note="فقط مدیر گروه"),
-            S(10, "@head", "group_approve", expect=State.COUNCIL_APPROVAL),
+            S(9, "@ref_db", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL),
+            S(10, "@head", "council_approve", expect=NOT_ALLOWED, note="تصویب نهایی فقط با آموزش دانشکده است"),
             S(11, "@edu", "council_approve", expect=State.IN_PROGRESS),
             S(80, "@author", "submit_thesis", expect=GUARD, note="بدون فایل پایان‌نامه"),
             S(80, "@author", "upload_thesis"),
@@ -278,7 +294,8 @@ SCENARIOS = [
         description="لغو فقط با توضیح و فقط توسط آموزش دانشکده؛ پس از لغو هیچ اقدامی ممکن نیست.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
-            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.DRAFTING),
+            S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
+            S(0, "@advisor", "advisor_accept", expect=State.DRAFTING),
             S(5, "@author", "cancel", {"note": "انصراف"}, NOT_ALLOWED, note="دانشجو نمی‌تواند لغو کند"),
             S(5, "@edu", "cancel", expect=GUARD, note="لغو بدون توضیح"),
             S(5, "@edu", "cancel", {"note": "انصراف دانشجو از پروژه"}, State.CANCELLED),

@@ -24,6 +24,7 @@
       </a>
       {% if user.is_authenticated %}
         <nav class="account" aria-label="حساب کاربری">
+          {% if user.is_superuser or user.user_type == "edu_staff" %}<a class="btn ghost compact" href="{% url 'project_list' %}">همه‌ی پروژه‌ها</a>{% endif %}
           <div class="user-chip">
             <span class="avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1" }}</span>
             <span class="user-meta">

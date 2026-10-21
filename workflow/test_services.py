@@ -56,11 +56,17 @@ class WorkflowTestCase(TestCase):
     def new_case(self, author=None):
         return services.create_case(author or self.student, "عنوان آزمایشی")
 
+    def choose_advisor(self, case, author=None, advisor=None):
+        """دانشجو استاد را انتخاب می‌کند و استاد درخواست را می‌پذیرد؛ پرونده به «تدوین پیشنهاد» می‌رود."""
+        advisor = advisor or self.advisor
+        case = self.do(case, "select_advisor", author or self.student, advisor=advisor)
+        return self.do(case, "advisor_accept", advisor)
+
     def to_referee_review(self, author=None, referees=None):
         """پرونده را تا وضعیت «در حال داوری» جلو می‌برد."""
         author = author or self.student
         case = self.new_case(author)
-        case = self.do(case, "select_advisor", author, advisor=self.advisor)
+        case = self.choose_advisor(case, author, self.advisor)
         services.upload_document(case, author, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", author)
         case = self.do(case, "advisor_approve", self.advisor)
@@ -70,7 +76,6 @@ class WorkflowTestCase(TestCase):
     def to_in_progress(self):
         case = self.to_referee_review()
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
-        case = self.do(case, "group_approve", self.head)
         return self.do(case, "council_approve", self.edu)
 
 
@@ -81,7 +86,9 @@ class HappyPathTests(WorkflowTestCase):
 
         case = self.do(case, "select_advisor", self.student, advisor=self.advisor)
         self.assertEqual((case.state, case.advisor, case.department),
-                         (State.DRAFTING, self.advisor, self.dept))
+                         (State.ADVISOR_PENDING, self.advisor, self.dept))
+        case = self.do(case, "advisor_accept", self.advisor)
+        self.assertEqual(case.state, State.DRAFTING)
 
         services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", self.student)
@@ -91,9 +98,7 @@ class HappyPathTests(WorkflowTestCase):
 
         case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
-        self.assertEqual(case.state, State.GROUP_APPROVAL)
-
-        case = self.do(case, "group_approve", self.head)
+        self.assertEqual(case.state, State.COUNCIL_APPROVAL)
         case = self.do(case, "council_approve", self.edu)
         self.assertEqual((case.state, case.final_approved_at),
                          (State.IN_PROGRESS, timezone.localdate()))
@@ -117,7 +122,7 @@ class HappyPathTests(WorkflowTestCase):
         self.assertEqual(events[0], ("create_case", State.ADVISOR_SELECTION, State.ADVISOR_SELECTION))
         self.assertEqual(events[-1], ("assign_referees", State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW))
         self.assertEqual([a for a, _, _ in events],
-                         ["create_case", "select_advisor", "upload_proposal", "submit_proposal",
+                         ["create_case", "select_advisor", "advisor_accept", "upload_proposal", "submit_proposal",
                           "advisor_approve", "edu_register", "assign_referees"])
         self.assertEqual(case.events.get(action="edu_register").actor, self.edu)
 
@@ -165,10 +170,10 @@ class GuardTests(WorkflowTestCase):
     def test_advisor_must_be_faculty_with_department(self):
         case = self.new_case()
         with self.assertRaises(services.GuardFailed):
-            self.do(case, "select_advisor", self.student, advisor=self.edu)
+            self.choose_advisor(case, self.student, self.edu)
 
     def test_proposal_file_is_required_before_submission(self):
-        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(self.new_case(), self.student, self.advisor)
         offer = services.available_actions(case, self.student)[0]
         self.assertEqual(offer.transition.action, "submit_proposal")
         self.assertTrue(offer.blocked)
@@ -176,7 +181,7 @@ class GuardTests(WorkflowTestCase):
             self.do(case, "submit_proposal", self.student)
 
     def test_returning_needs_a_note(self):
-        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(self.new_case(), self.student, self.advisor)
         services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", self.student)
         with self.assertRaises(services.GuardFailed):
@@ -194,7 +199,7 @@ class GuardTests(WorkflowTestCase):
 
     def test_non_student_author_needs_two_referees_and_gets_no_grade(self):
         case = self.new_case(self.external)
-        case = self.do(case, "select_advisor", self.external, advisor=self.advisor)
+        case = self.choose_advisor(case, self.external, self.advisor)
         services.upload_document(case, self.external, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", self.external)
         case = self.do(case, "advisor_approve", self.advisor)
@@ -208,9 +213,7 @@ class GuardTests(WorkflowTestCase):
         self.assertFalse(services.is_pending_for(case, self.ref1))
         self.assertTrue(services.is_pending_for(case, self.ref2))
         case = self.do(case, "submit_review", self.ref2, decision=ReviewDecision.APPROVE)
-        self.assertEqual(case.state, State.GROUP_APPROVAL)
-
-        case = self.do(case, "group_approve", self.head)
+        self.assertEqual(case.state, State.COUNCIL_APPROVAL)
         case = self.do(case, "council_approve", self.edu)
         services.upload_document(case, self.external, DocKind.THESIS, pdf())
         case = self.do(case, "submit_thesis", self.external)
@@ -242,14 +245,13 @@ class GuardTests(WorkflowTestCase):
         with self.assertRaises(services.GuardFailed):               # رأی تکراری
             self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
         case = self.do(case, "submit_review", self.ref2, decision=ReviewDecision.APPROVE)
-        self.assertEqual(case.state, State.GROUP_APPROVAL)
+        self.assertEqual(case.state, State.COUNCIL_APPROVAL)
 
     def test_upload_is_limited_to_author_and_state(self):
         case = self.to_referee_review()
         with self.assertRaises(services.NotAllowed):                # در حال داوری
             services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
-        case2 = self.do(self.new_case(self.external), "select_advisor", self.external,
-                        advisor=self.advisor)
+        case2 = self.choose_advisor(self.new_case(self.external), self.external, self.advisor)
         with self.assertRaises(services.NotAllowed):                # نویسنده‌ی پرونده نیست
             services.upload_document(case2, self.advisor, DocKind.PROPOSAL, pdf())
 
@@ -294,7 +296,8 @@ class GuardTests(WorkflowTestCase):
     def test_rejection_and_cancellation_are_terminal(self):
         case = self.to_referee_review()
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
-        case = self.do(case, "group_reject", self.head, note="موضوع تکراری است")
+        self.assertEqual(case.state, State.COUNCIL_APPROVAL)
+        case = self.do(case, "council_reject", self.edu, note="موضوع تکراری است")
         self.assertEqual(case.state, State.REJECTED)
         self.assertEqual(services.available_actions(case, self.edu), [])
         # پس از رد، دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه بسازد
@@ -315,23 +318,22 @@ class DeadlineTests(WorkflowTestCase):
         d = kinds()
         today = timezone.localdate()
         self.assertEqual(d[DeadlineKind.PROPOSAL_SUBMISSION].satisfied_at, today)
-        self.assertEqual(d[DeadlineKind.GROUP_REVIEW].satisfied_at, today)
+        self.assertEqual(d[DeadlineKind.GROUP_REVIEW].satisfied_at, today)   # با پایان داوری
         self.assertEqual(d[DeadlineKind.DEFENSE_EARLIEST].due_date, rules.add_months(today, 3))
         self.assertFalse(case.events.get(action="edu_register").data["late"])
 
     def to_in_progress_from(self, case):
-        case = self.do(case, "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(case, self.student, self.advisor)
         services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", self.student)
         case = self.do(case, "advisor_approve", self.advisor)
         case = self.do(case, "edu_register", self.edu)
         case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
-        case = self.do(case, "group_approve", self.head)
         return self.do(case, "council_approve", self.edu)
 
     def test_late_registration_is_flagged_but_not_blocked(self):
-        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(self.new_case(), self.student, self.advisor)
         services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
         case = self.do(case, "submit_proposal", self.student)
         case = self.do(case, "advisor_approve", self.advisor)
@@ -359,3 +361,121 @@ class TermRuleTests(WorkflowTestCase):
         self.assertEqual(case.roles_of(self.ref1), {CaseRole.REFEREE})
         self.assertTrue(services.is_pending_for(case, self.ref1))
         self.assertFalse(services.is_pending_for(case, self.edu))    # فقط «لغو» دارد
+
+
+class AdvisorRequestTests(WorkflowTestCase):
+    """درخواست راهنمایی: استاد باید بپذیرد و هر استاد حداکثر دو دانشجو دارد."""
+
+    def other_students(self, n):
+        return [User.objects.create_user(f"s{i}", password="x", user_type=UserType.STUDENT)
+                for i in range(n)]
+
+    def test_request_waits_for_the_advisor_and_only_the_advisor_can_answer(self):
+        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        self.assertEqual(case.state, State.ADVISOR_PENDING)
+        self.assertTrue(services.is_pending_for(case, self.advisor))
+        self.assertFalse(services.is_pending_for(case, self.student))
+        for user in (self.student, self.head, self.edu, self.ref1):
+            with self.assertRaises(services.NotAllowed, msg=user.username):
+                self.do(case, "advisor_accept", user)
+        # تا پذیرش، نه آپلود ممکن است و نه ارسال پیشنهاد
+        with self.assertRaises(services.NotAllowed):
+            services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
+
+    def test_decline_needs_a_note_and_sends_the_student_back_to_choose_again(self):
+        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        with self.assertRaises(services.GuardFailed):
+            self.do(case, "advisor_decline", self.advisor, note="  ")
+        case = self.do(case, "advisor_decline", self.advisor, note="ظرفیت تخصصی ندارم")
+        self.assertEqual((case.state, case.advisor, case.department),
+                         (State.ADVISOR_SELECTION, None, None))
+        feedback = services.pending_feedback(case)
+        self.assertEqual(feedback["items"][0]["note"], "ظرفیت تخصصی ندارم")
+        # دانشجو می‌تواند استاد دیگری را انتخاب کند
+        other = User.objects.create_user("adv2", password="x", user_type=UserType.FACULTY,
+                                         department=self.dept)
+        case = self.do(case, "select_advisor", self.student, advisor=other)
+        self.assertEqual(case.state, State.ADVISOR_PENDING)
+
+    def test_an_advisor_has_at_most_two_students(self):
+        a, b, c = self.other_students(3)
+        self.choose_advisor(self.new_case(a), a)
+        self.choose_advisor(self.new_case(b), b)
+        self.assertEqual(services.advisee_count(self.advisor), 2)
+        self.assertNotIn(self.advisor, services.eligible_advisors())
+        case = self.new_case(c)
+        with self.assertRaises(services.GuardFailed):              # درخواست به استاد پُر
+            self.do(case, "select_advisor", c, advisor=self.advisor)
+
+    def test_pending_requests_do_not_use_up_capacity_but_acceptance_rechecks_it(self):
+        a, b, c = self.other_students(3)
+        pending = [self.do(self.new_case(u), "select_advisor", u, advisor=self.advisor)
+                   for u in (a, b, c)]                              # هر سه درخواست می‌توانند ثبت شوند
+        self.assertTrue(all(p.state == State.ADVISOR_PENDING for p in pending))
+        self.do(pending[0], "advisor_accept", self.advisor)
+        self.do(pending[1], "advisor_accept", self.advisor)
+        offer = services.available_actions(pending[2], self.advisor)[0]
+        self.assertIn("پر است", offer.blocked)
+        with self.assertRaises(services.GuardFailed):
+            self.do(pending[2], "advisor_accept", self.advisor)
+        case = self.do(pending[2], "advisor_decline", self.advisor, note="ظرفیتم پر شد")
+        self.assertEqual(case.state, State.ADVISOR_SELECTION)
+
+    def test_finished_projects_free_a_slot(self):
+        a, b = self.other_students(2)
+        case_a = self.choose_advisor(self.new_case(a), a)
+        self.choose_advisor(self.new_case(b), b)
+        self.assertFalse(services.advisor_has_room(self.advisor))
+        self.do(case_a, "cancel", self.edu, note="انصراف")
+        self.assertTrue(services.advisor_has_room(self.advisor))
+
+
+class FeedbackAndVisibilityTests(WorkflowTestCase):
+    def test_student_sees_the_advisor_return_comment_until_resubmitting(self):
+        case = self.choose_advisor(self.new_case())
+        self.assertIsNone(services.pending_feedback(case))
+        services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
+        case = self.do(case, "submit_proposal", self.student)
+        case = self.do(case, "advisor_return", self.advisor, note="بخش ۳ ناقص است")
+        feedback = services.pending_feedback(case)
+        self.assertEqual([i["note"] for i in feedback["items"]], ["بخش ۳ ناقص است"])
+        self.assertEqual(feedback["items"][0]["who"], str(self.advisor))
+        case = self.do(case, "submit_proposal", self.student)
+        self.assertIsNone(services.pending_feedback(case))
+
+    def test_student_sees_every_referee_comment_after_revision(self):
+        case = self.to_referee_review(referees=[self.ref1, self.ref2])
+        case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.REVISE, note="روش مبهم است")
+        case = self.do(case, "submit_review", self.ref2, decision=ReviewDecision.APPROVE)
+        self.assertEqual(case.state, State.REVISION)
+        notes = {i["who"]: i["note"] for i in services.pending_feedback(case)["items"]}
+        self.assertEqual(notes, {str(self.ref1): "روش مبهم است"})
+
+    def test_only_author_advisor_and_edu_see_previous_versions(self):
+        case = self.to_referee_review(referees=[self.ref1, self.ref2])
+        case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.REVISE, note="اصلاح")
+        case = self.do(case, "submit_review", self.ref2, decision=ReviewDecision.APPROVE)
+        services.upload_document(case, self.student, DocKind.PROPOSAL, pdf("v2.pdf"))
+        case = self.do(case, "resubmit_proposal", self.student)
+        numbers = lambda u: [v.number for v in services.visible_versions(case, u)]
+        for user in (self.student, self.advisor, self.edu):
+            self.assertEqual(numbers(user), [2, 1], user.username)
+        for user in (self.ref1, self.ref2, self.head):
+            self.assertEqual(numbers(user), [2], user.username)
+            old = case.versions.get(number=1)
+            self.assertFalse(services.can_download(case, user, old))
+            self.assertTrue(services.can_download(case, user, case.versions.get(number=2)))
+        uploads = lambda u: [e.data.get("version") for e in services.visible_events(case, u)
+                             if e.action == "upload_proposal"]
+        self.assertEqual(uploads(self.student), [1, 2])
+        self.assertEqual(uploads(self.ref1), [2])
+
+
+class CountdownTests(TestCase):
+    def test_countdown_in_months_and_days(self):
+        today = date(2026, 10, 21)
+        due = rules.add_months(today, 2) + timedelta(days=5)
+        self.assertEqual(rules.countdown(due, today), (2, 5, False))
+        self.assertEqual(rules.countdown(today, today), (0, 0, False))
+        self.assertEqual(rules.countdown(today - timedelta(days=1), today), (0, 1, True))
+        self.assertEqual(rules.countdown(today + timedelta(days=11), today), (0, 11, False))

@@ -11,7 +11,8 @@ import jdatetime
 from .enums import Semester
 
 PROPOSAL_SUBMISSION_MONTHS = 2      # توضیح ۱: تحویل پیشنهاد حداکثر ۲ ماه پس از ثبت‌نام
-GROUP_REVIEW_MONTHS = 2             # توضیح ۲: داوری گروه حداکثر ۲ ماه
+GROUP_REVIEW_MONTHS = 2             # توضیح ۲: داوری پیشنهاد (در گروه) حداکثر ۲ ماه
+MAX_ADVISEES = 2                    # هر استاد هم‌زمان حداکثر راهنمای این تعداد دانشجو (پروژه‌ی جاری) است
 MIN_MONTHS_APPROVAL_TO_DEFENSE = 3  # توضیح ۴: حداقل ۳ ماه بین تصویب نهایی و دفاع
 THESIS_LEAD_WEEKS = 3               # توضیح ۴: پایان‌نامه حداقل ۳ هفته پیش از مهلت نمره
 REFEREES_FOR_STUDENT = 1
@@ -26,6 +27,19 @@ def add_months(d: date, months: int) -> date:
     month = m % 12 + 1
     day = min(d.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
+
+
+def countdown(due: date, today: date):
+    """
+    فاصله‌ی تقویمی «امروز» تا یک مهلت به‌صورت (ماه، روز، گذشته؟) برای نمایش تایمر.
+    ماه‌ها با add_months شمرده می‌شوند، پس «یک ماه» همان روز ماه بعد است نه ۳۰ روز.
+    """
+    overdue = due < today
+    start, end = (due, today) if overdue else (today, due)
+    months = 0
+    while add_months(start, months + 1) <= end:
+        months += 1
+    return months, (end - add_months(start, months)).days, overdue
 
 
 def grade_entry_deadline(academic_year: int, semester: str) -> date:

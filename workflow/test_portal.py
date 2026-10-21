@@ -85,10 +85,10 @@ class DashboardTests(PortalTestCase):
                              (pending, others), user.username)
 
         services.perform(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
-        self.login(self.head)                          # حالا نوبت مدیر گروه است
+        self.login(self.edu)                           # حالا نوبت کارشناس آموزش (شورای دانشکده) است
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(len(response.context["pending"]), 1)
-        self.assertContains(response, "تصویب پیشنهاد در گروه")
+        self.assertContains(response, "تصویب در شورای دانشکده و ثبت نهایی")
 
     def test_dashboard_shows_nearest_deadline_in_jalali(self):
         case = self.new_case()
@@ -110,7 +110,15 @@ class FormFlowTests(PortalTestCase):
                             str(self.advisor))
         self.post_action(case, "select_advisor", advisor=self.advisor.pk)
         case.refresh_from_db()
-        self.assertEqual((case.state, case.advisor), (State.DRAFTING, self.advisor))
+        self.assertEqual((case.state, case.advisor), (State.ADVISOR_PENDING, self.advisor))
+        self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])),
+                            "در انتظار پذیرش استاد راهنما")
+        self.login(self.advisor)                       # استاد باید درخواست را بپذیرد
+        self.assertEqual(len(self.client.get(reverse("dashboard")).context["pending"]), 1)
+        self.post_action(case, "advisor_accept")
+        case.refresh_from_db()
+        self.assertEqual(case.state, State.DRAFTING)
+        self.login(self.student)
 
         # تا فایل بارگذاری نشده، دکمه‌ی ارسال غیرفعال است و دلیلش دیده می‌شود
         self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])),
@@ -123,7 +131,7 @@ class FormFlowTests(PortalTestCase):
         self.assertEqual(case.state, State.ADVISOR_REVIEW)
 
     def test_upload_rejects_wrong_file_type(self):
-        case = services.perform(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(self.new_case())
         self.login(self.student)
         response = self.client.post(reverse("document_upload", args=[case.pk]),
                                     {"file": pdf("virus.exe")})
@@ -131,7 +139,7 @@ class FormFlowTests(PortalTestCase):
         self.assertFalse(case.versions.exists())
 
     def test_required_note_is_enforced_by_the_form(self):
-        case = services.perform(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.choose_advisor(self.new_case())
         services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
         case = services.perform(case, "submit_proposal", self.student)
         self.login(self.advisor)
@@ -247,13 +255,29 @@ class SeedDemoFullTests(TestCase):
         self.assertEqual(states, set(State) - {State.ADVISOR_SELECTION, State.COMPLETED,
                                                  State.REJECTED, State.CANCELLED})
 
+    def test_seeded_advisors_respect_the_capacity_and_the_request_is_pending(self):
+        from workflow import services
+        self.run_seed("--full")
+        for advisor in User.objects.filter(user_type="faculty"):
+            self.assertLessEqual(services.advisee_count(advisor), rules.MAX_ADVISEES, advisor.username)
+        sharifi = User.objects.get(username="leila.sharifi")
+        self.assertTrue(services.advisor_has_room(sharifi))
+        self.assertFalse(services.advisor_has_room(User.objects.get(username="soleiman.fallah")))
+        request = ProjectCase.objects.get(author__username="elaheh.jafari")
+        self.assertEqual((request.state, request.advisor), (State.ADVISOR_PENDING, sharifi))
+        self.assertTrue(services.is_pending_for(request, sharifi))
+        self.assertFalse(request.versions.exists())
+        revision = ProjectCase.objects.get(author__username="pouria.abbasi")
+        notes = [i["note"] for i in services.pending_feedback(revision)["items"]]
+        self.assertEqual(notes, ["لطفاً روش ارزیابی را دقیق‌تر توضیح دهید."])
+
     def test_every_seeded_case_offers_its_role_an_action(self):
         from workflow import services
         self.run_seed("--full")
         edu, head = User.objects.get(username="maryam.salehi"), User.objects.get(username="ali.ahmadi")
-        advisor, ref = User.objects.get(username="soleiman.fallah"), User.objects.get(username="mehdi.zakeri")
+        ref = User.objects.get(username="mehdi.zakeri")
         for case in ProjectCase.objects.exclude(author__username__in=["baharan.sheikholeslami", "kamran.shirazi"]):
-            actors = [case.author, advisor, head, edu, ref]
+            actors = [case.author, case.advisor, head, edu, ref]
             todo = [u.username for u in actors
                     if any(o.pending for o in services.available_actions(case, u))]
             self.assertTrue(todo, f"{case.state}: هیچ نقشی کاری ندارد")
@@ -302,7 +326,7 @@ class GuideScenarioTests(TestCase):
         from django.utils import timezone
         call_command("seed_demo", stdout=StringIO())
         sara = User.objects.get(username="sara.nouri")
-        fallah = User.objects.get(username="soleiman.fallah")
+        sharifi = User.objects.get(username="leila.sharifi")
         mousavi = User.objects.get(username="hossein.mousavi")
 
         self.client.force_login(sara)
@@ -314,25 +338,120 @@ class GuideScenarioTests(TestCase):
         case = ProjectCase.objects.get(author=sara)
         self.assertEqual(case.state, State.ADVISOR_SELECTION)
 
-        self.act("sara.nouri", case, "select_advisor", advisor=fallah.pk)
+        self.act("sara.nouri", case, "select_advisor", advisor=sharifi.pk)
+        self.act("leila.sharifi", case, "advisor_accept")
         self.upload("sara.nouri", case, "proposal-sara-nouri.docx")
         self.act("sara.nouri", case, "submit_proposal")
-        self.act("soleiman.fallah", case, "advisor_approve")
+        self.act("leila.sharifi", case, "advisor_approve")
         self.act("maryam.salehi", case, "edu_register")
         self.act("ali.ahmadi", case, "assign_referees", referees=[mousavi.pk])
         self.act("hossein.mousavi", case, "submit_review", decision="approve")
-        self.act("ali.ahmadi", case, "group_approve")
         self.act("maryam.salehi", case, "council_approve")
         case.refresh_from_db()
         self.assertEqual(case.state, State.IN_PROGRESS)
 
         self.upload("sara.nouri", case, "thesis-sara-nouri.docx")
         self.act("sara.nouri", case, "submit_thesis")
-        self.act("soleiman.fallah", case, "thesis_approve")
+        self.act("leila.sharifi", case, "thesis_approve")
 
         call_command("backdate_case", str(case.pk), "--days", "120", stdout=StringIO())
         self.act("maryam.salehi", case, "schedule_defense",
                  defense_date=to_jalali(timezone.localdate(), fa=False), defense_place="کلاس ۲۰۱ دانشکده")
-        self.act("soleiman.fallah", case, "record_result", grade="18.5")
+        self.act("leila.sharifi", case, "record_result", grade="18.5")
         case.refresh_from_db()
         self.assertEqual((case.state, float(case.grade)), (State.COMPLETED, 18.5))
+
+
+class DashboardRemindersTests(PortalTestCase):
+    def test_advisor_and_referee_get_a_reminder_card_and_see_their_students(self):
+        case = self.to_referee_review()
+        self.login(self.ref1)
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual([r["case"] for r in response.context["reminders"]], [case])
+        self.assertContains(response, "منتظر بررسی و تأیید شماست")
+        self.assertContains(response, "ثبت رأی داور")
+        self.assertEqual([r.case for r in response.context["refereeing"]], [case])
+        self.assertContains(response, str(self.student))           # نام دانشجو
+
+        self.login(self.advisor)                                    # راهنما فعلاً کاری ندارد، اما دانشجویش را می‌بیند
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(response.context["reminders"], [])
+        self.assertEqual([r.case for r in response.context["advisees"]], [case])
+        self.assertContains(response, str(self.student))
+        self.assertEqual(response.context["capacity"], {"used": 1, "max": rules.MAX_ADVISEES})
+
+    def test_advisor_reminder_lists_requests_and_proposals_awaiting_approval(self):
+        request = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        self.login(self.advisor)
+        response = self.client.get(reverse("dashboard"))
+        reminder = response.context["reminders"][0]
+        self.assertEqual(reminder["case"], request)
+        self.assertIn("پذیرش راهنمایی دانشجو", reminder["what"])
+
+    def test_students_and_edu_get_no_reminder_card(self):
+        self.to_referee_review()
+        for user in (self.student, self.edu, self.head):
+            self.login(user)
+            self.assertEqual(self.client.get(reverse("dashboard")).context["reminders"], [], user.username)
+
+    def test_student_sees_deadlines_as_month_day_timers(self):
+        case = self.new_case()
+        self.login(self.student)
+        response = self.client.get(reverse("dashboard"))
+        self.assertTrue(response.context["timers"])
+        self.assertContains(response, "timer-card")
+        self.assertContains(response, "مانده")
+        self.login(self.advisor)
+        self.assertEqual(self.client.get(reverse("dashboard")).context["timers"], [])
+
+
+class ProjectListTests(PortalTestCase):
+    def test_only_edu_staff_see_the_list_of_all_projects(self):
+        case = self.to_referee_review()
+        for user in (self.student, self.advisor, self.ref1, self.head, self.outsider):
+            self.login(user)
+            self.assertEqual(self.client.get(reverse("project_list")).status_code, 403, user.username)
+            self.assertNotContains(self.client.get(reverse("dashboard")), reverse("project_list"))
+        self.login(self.edu)
+        response = self.client.get(reverse("project_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("case_detail", args=[case.pk]))
+        self.assertContains(response, case.title_fa)
+        self.assertContains(response, reverse("project_list"))      # پیوند در منو
+
+    def test_search_and_state_filter(self):
+        a = self.to_referee_review()
+        b = self.choose_advisor(self.new_case(self.external), self.external)
+        self.login(self.edu)
+        url = reverse("project_list")
+        self.assertEqual({c.pk for c in self.client.get(url).context["cases"]}, {a.pk, b.pk})
+        self.assertEqual([c.pk for c in self.client.get(url, {"state": State.REFEREE_REVIEW}).context["cases"]], [a.pk])
+        self.assertEqual([c.pk for c in self.client.get(url, {"q": "external"}).context["cases"]], [b.pk])
+
+
+class VersionHistoryPortalTests(PortalTestCase):
+    def test_referee_cannot_open_or_download_previous_versions(self):
+        case = self.to_referee_review(referees=[self.ref1, self.ref2])
+        case = services.perform(case, "submit_review", self.ref1, decision=ReviewDecision.REVISE, note="اصلاح")
+        case = services.perform(case, "submit_review", self.ref2, decision=ReviewDecision.APPROVE)
+        services.upload_document(case, self.student, DocKind.PROPOSAL, pdf("v2.pdf"))
+        case = services.perform(case, "resubmit_proposal", self.student)
+        old, new = case.versions.get(number=1), case.versions.get(number=2)
+        expected = {self.student: (200, 200), self.advisor: (200, 200), self.edu: (200, 200),
+                    self.ref1: (404, 200), self.head: (404, 200)}
+        for user, (old_status, new_status) in expected.items():
+            self.login(user)
+            self.assertEqual(self.client.get(reverse("document_download", args=[old.pk])).status_code,
+                             old_status, user.username)
+            self.assertEqual(self.client.get(reverse("document_download", args=[new.pk])).status_code,
+                             new_status, user.username)
+
+    def test_returned_proposal_shows_the_recorded_comment_to_the_student(self):
+        case = self.choose_advisor(self.new_case())
+        services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
+        case = services.perform(case, "submit_proposal", self.student)
+        services.perform(case, "advisor_return", self.advisor, note="هدف پروژه روشن نیست")
+        self.login(self.student)
+        response = self.client.get(reverse("case_detail", args=[case.pk]))
+        self.assertContains(response, 'class="card feedback"')
+        self.assertContains(response, "هدف پروژه روشن نیست")

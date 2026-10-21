@@ -3,6 +3,7 @@ from django import template
 from django.utils import timezone
 
 from workflow import jalali as j
+from workflow import rules
 from workflow import services
 
 register = template.Library()
@@ -29,3 +30,29 @@ def fa(value):
 @register.filter
 def action_label(action):
     return services.action_label(action)
+
+
+def _countdown(due):
+    return rules.countdown(due, timezone.localdate())
+
+
+@register.filter
+def time_left(due):
+    """تایمر مهلت به ماه و روز: «۲ ماه و ۱۰ روز مانده»، «امروز آخرین مهلت است»، «۳ روز از مهلت گذشته»."""
+    months, days, overdue = _countdown(due)
+    if not months and not days:
+        return "امروز آخرین مهلت است"
+    parts = [f"{j.fa_digits(months)} ماه"] if months else []
+    if days:
+        parts.append(f"{j.fa_digits(days)} روز")
+    return " و ".join(parts) + (" از مهلت گذشته" if overdue else " مانده")
+
+
+@register.filter
+def time_left_class(due):
+    """رنگ تایمر: ≤ ۳ روز یا گذشته قرمز، ≤ ۱۴ روز نارنجی، وگرنه آبی."""
+    months, days, overdue = _countdown(due)
+    total = months * 30 + days
+    if overdue or total <= 3:
+        return "danger"
+    return "warn" if total <= 14 else "calm"

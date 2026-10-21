@@ -8,12 +8,52 @@
     <h1>داشبورد</h1>
     <span class="muted">پرونده‌هایی که در آن‌ها نقش دارید</span>
   </div>
-  {% if can_create %}<a class="btn" href="{% url 'case_create' %}">＋ ثبت پرونده‌ی جدید</a>{% endif %}
+  <div class="actions">
+    {% if is_edu %}<a class="btn secondary" href="{% url 'project_list' %}">فهرست همه‌ی پروژه‌ها</a>{% endif %}
+    {% if can_create %}<a class="btn" href="{% url 'case_create' %}">＋ ثبت پرونده‌ی جدید</a>{% endif %}
+  </div>
 </div>
+
+{% if reminders %}
+<section class="card reminder" aria-labelledby="reminder-title">
+  <div class="card-head"><h2 id="reminder-title">یادآور: منتظر بررسی و تأیید شماست</h2><span class="count">{{ reminders|length|fa }}</span></div>
+  <ul class="reminder-list">
+  {% for r in reminders %}
+    <li>
+      <div>
+        <a class="row-title" href="{% url 'case_detail' r.case.pk %}">{{ r.case.title_fa }}</a>
+        <div class="muted">{{ r.case.author }}{% if r.case.author.student_number %} — {{ r.case.author.student_number|fa }}{% endif %} · به‌عنوان {{ r.as|join:"، " }}</div>
+        <div class="reminder-what">{{ r.what|join:"، " }}</div>
+      </div>
+      <div class="reminder-meta">
+        <span class="badge {% if r.days >= 7 %}stopped{% else %}wait{% endif %}">{% if r.days %}{{ r.days|fa }} روز است منتظر مانده{% else %}امروز رسیده{% endif %}</span>
+        {% if r.deadline %}<span class="timer {{ r.deadline.due_date|time_left_class }}" title="{{ r.deadline.get_kind_display }}">{{ r.deadline.due_date|time_left }}</span>{% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if timers %}
+<section class="card timers" aria-labelledby="timers-title">
+  <div class="card-head"><h2 id="timers-title">مهلت‌های پیش رو</h2></div>
+  <div class="timer-grid">
+  {% for t in timers %}
+    <a class="timer-card {{ t.deadline.due_date|time_left_class }}" href="{% url 'case_detail' t.case.pk %}">
+      <small>{{ t.deadline.get_kind_display }}</small>
+      <strong>{{ t.deadline.due_date|time_left }}</strong>
+      <span>{{ t.deadline.due_date|jalali }} — {{ t.case.title_fa|truncatechars:48 }}</span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <div class="stats">
   <div class="stat{% if pending %} primary{% endif %}"><span class="num">{{ pending|length|fa }}</span><span class="label">منتظر اقدام شما</span></div>
   <div class="stat"><span class="num">{{ others|length|fa }}</span><span class="label">سایر پرونده‌ها</span></div>
+  {% if capacity %}<div class="stat"><span class="num">{{ capacity.used|fa }} از {{ capacity.max|fa }}</span><span class="label">ظرفیت راهنمایی دانشجو</span></div>{% endif %}
 </div>
 
 <section class="card todo">
@@ -21,6 +61,20 @@
   {% if pending %}{% include "workflow/_case_table.html" with rows=pending %}
   {% else %}<p class="empty">در حال حاضر هیچ پرونده‌ای منتظر اقدام شما نیست.</p>{% endif %}
 </section>
+
+{% if faculty %}
+<section class="card">
+  <div class="card-head"><h2>دانشجویانی که راهنمایی می‌کنم</h2><span class="count">{{ advisees|length|fa }}</span></div>
+  {% if advisees %}{% include "workflow/_people_table.html" with rows=advisees person="advisee" %}
+  {% else %}<p class="empty">هنوز راهنمای دانشجویی نیستید. درخواست‌های راهنمایی همین‌جا و در «در انتظار اقدام شما» می‌آیند.</p>{% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>پرونده‌هایی که داوری می‌کنم</h2><span class="count">{{ refereeing|length|fa }}</span></div>
+  {% if refereeing %}{% include "workflow/_people_table.html" with rows=refereeing person="referee" %}
+  {% else %}<p class="empty">داوری پرونده‌ای به شما سپرده نشده است.</p>{% endif %}
+</section>
+{% endif %}
 
 <section class="card">
   <div class="card-head"><h2>سایر پرونده‌ها</h2>{% if others %}<span class="count">{{ others|length|fa }}</span>{% endif %}</div>

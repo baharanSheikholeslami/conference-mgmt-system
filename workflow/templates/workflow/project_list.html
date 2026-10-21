@@ -1,0 +1,46 @@
+{% extends "workflow/base.html" %}
+{% load portal %}
+{% block title %}همه‌ی پروژه‌ها{% endblock %}
+{% block content %}
+<a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>
+<div class="page-head">
+  <div>
+    <h1>همه‌ی پروژه‌ها</h1>
+    <span class="muted">{{ total|fa }} پرونده — روی هر ردیف بزنید تا جزئیات پروژه و دانشجو را ببینید</span>
+  </div>
+</div>
+
+<section class="card">
+  <form class="filter-bar" method="get" role="search">
+    <input type="search" name="q" value="{{ q }}" placeholder="جست‌وجو: نام دانشجو، شماره دانشجویی، استاد یا عنوان پروژه" aria-label="جست‌وجو">
+    <select name="state" aria-label="وضعیت">
+      <option value="">همه‌ی وضعیت‌ها</option>
+      {% for s, n in state_counts %}<option value="{{ s.value }}"{% if state == s.value %} selected{% endif %}>{{ s.label }} ({{ n|fa }})</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">اعمال</button>
+    {% if q or state %}<a class="btn ghost" href="{% url 'project_list' %}">پاک‌کردن</a>{% endif %}
+  </form>
+
+  {% if cases %}
+  <div class="table-wrap stacked">
+  <table>
+    <thead>
+      <tr><th>دانشجو / نویسنده</th><th>شماره دانشجویی</th><th>عنوان پروژه</th><th>استاد راهنما</th><th>نیم‌سال</th><th>وضعیت</th></tr>
+    </thead>
+    <tbody>
+    {% for c in cases %}
+      <tr class="click-row">
+        <td data-label="دانشجو"><a class="row-title" href="{% url 'case_detail' c.pk %}">{{ c.author }}</a>{% if c.author.user_type == "external" %}<br><small>نویسنده غیردانشجو</small>{% endif %}</td>
+        <td data-label="شماره دانشجویی">{{ c.author.student_number|fa|default:"—" }}</td>
+        <td data-label="عنوان پروژه">{{ c.title_fa }}</td>
+        <td data-label="استاد راهنما">{{ c.advisor|default:"—" }}</td>
+        <td data-label="نیم‌سال">{{ c.get_semester_display }} {{ c.academic_year|fa }}</td>
+        <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=c %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="empty">پروژه‌ای با این مشخصات پیدا نشد.</p>{% endif %}
+</section>
+{% endblock %}
