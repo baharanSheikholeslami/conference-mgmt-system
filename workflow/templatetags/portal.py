@@ -1,5 +1,9 @@
 """فیلترهای قالب: تاریخ شمسی و ارقام فارسی.  استفاده: {% load portal %} ... {{ case.defense_date|jalali }}"""
+import os
+
 from django import template
+from django.contrib.staticfiles import finders
+from django.templatetags.static import static
 from django.utils import timezone
 
 from workflow import jalali as j
@@ -7,6 +11,14 @@ from workflow import rules
 from workflow import services
 
 register = template.Library()
+
+
+@register.simple_tag
+def static_v(path):
+    """مثل {% static %} ولی با ?v=زمان‌تغییر فایل، تا مرورگر (به‌ویژه کروم) پس از هر تغییر CSS نسخه‌ی کهنه را از حافظه‌ی نهان نخواند."""
+    url = static(path)
+    found = finders.find(path)
+    return f"{url}?v={int(os.path.getmtime(found))}" if found else url
 
 
 @register.filter

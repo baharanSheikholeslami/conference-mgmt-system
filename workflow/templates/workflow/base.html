@@ -1,4 +1,4 @@
-{% load static agent_tags %}<!doctype html>
+{% load static agent_tags portal %}<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
@@ -9,8 +9,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="{% static 'workflow/img/favicon-32.png' %}">
   <link rel="icon" type="image/png" sizes="64x64" href="{% static 'workflow/img/favicon-64.png' %}">
   <link rel="apple-touch-icon" href="{% static 'workflow/img/apple-touch-icon.png' %}">
-  <link rel="stylesheet" href="{% static 'workflow/style.css' %}">
-  <link rel="stylesheet" href="{% static 'agents/agents.css' %}">
+  <link rel="stylesheet" href="{% static_v 'workflow/style.css' %}">
+  <link rel="stylesheet" href="{% static_v 'agents/agents.css' %}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <a class="skip-link" href="#content">پرش به محتوای صفحه</a>
