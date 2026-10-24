@@ -8,8 +8,8 @@ from django.utils import timezone
 from workflow import rules
 from workflow.enums import (DeadlineKind, DocKind, ReviewDecision, Semester, State,
                             UserType)
-from workflow.models import (Department, DocumentVersion, ProjectCase, RefereeAssignment,
-                             Review, User)
+from workflow.models import (CaseEvent, Department, DocumentVersion, ProjectCase,
+                             RefereeAssignment, Review, User)
 
 PASSWORD = "test1234"
 
@@ -30,6 +30,12 @@ USERS = [
      "امنیت شبکه، رمزنگاری، امنیت اینترنت اشیا"),
     ("referee4", "hossein.mousavi", "حسین", "موسوی", UserType.FACULTY, False, "",
      "یادگیری عمیق، بینایی ماشین، پردازش تصویر"),
+    ("advisor2", "leila.sharifi", "لیلا", "شریفی", UserType.FACULTY, False, "",
+     "داده‌کاوی، سامانه‌های توصیه‌گر، تحلیل شبکه‌های اجتماعی"),
+    ("advisor3", "omid.bagheri", "امید", "باقری", UserType.FACULTY, False, "",
+     "رایانش موبایل، اینترنت اشیا، سامانه‌های نهفته"),
+    ("advisor4", "kaveh.mirzaei", "کاوه", "میرزایی", UserType.FACULTY, False, "",
+     "مهندسی نرم‌افزار، آزمون نرم‌افزار، معماری نرم‌افزار"),
     ("head1", "ali.ahmadi", "علی", "احمدی", UserType.FACULTY, True, "",
      "معماری کامپیوتر، سیستم‌های نهفته"),
     ("edu1", "maryam.salehi", "مریم", "صالحی", UserType.EDU_STAFF, False, "", ""),
@@ -43,6 +49,16 @@ LEGACY_USERNAMES = {
     "student4": "mahsa.rahimi", "student5": "reza.sadeghi", "student6": "niloofar.kazemi",
     "student7": "pouria.abbasi", "student8": "elaheh.jafari", "student9": "mohammad.taheri",
     "student10": "fatemeh.mousavi", "student11": "alireza.niknam", "student12": "zahra.babaei",
+}
+
+# استاد راهنمای هر دانشجو (هر استاد حداکثر دو دانشجو: rules.MAX_ADVISEES)؛ لیلا شریفی، امید باقری و
+# نرگس رضایی هنوز ظرفیت خالی دارند تا دانشجوی بدون پرونده (سارا نوری) بتواند از میان آن‌ها انتخاب کند
+# و سلیمان فلاح (۲ از ۲) نمونه‌ی «ظرفیت پُر» باشد.
+ADVISORS = {
+    "student1": "advisor3", "external1": "advisor4", "student3": "advisor1",
+    "mahsa.rahimi": "advisor1", "reza.sadeghi": "advisor4", "niloofar.kazemi": "referee3",
+    "pouria.abbasi": "referee3", "elaheh.jafari": "advisor2", "mohammad.taheri": "referee4",
+    "fatemeh.mousavi": "referee4", "alireza.niknam": "advisor2", "zahra.babaei": "referee2",
 }
 
 # عنوان پروژه‌ی پرونده‌های پایه (کلید داخلی دانشجو ← (عنوان فارسی، عنوان انگلیسی))
@@ -67,7 +83,7 @@ FULL_STUDENTS = [
      "A Library Management System on PostgreSQL"),
     ("pouria.abbasi", "پوریا", "عباسی", "40031095", State.REVISION,
      "تحلیل امنیت پروتکل‌های ارتباطی اینترنت اشیا", "Security Analysis of Internet of Things Communication Protocols"),
-    ("elaheh.jafari", "الهه", "جعفری", "40031096", State.GROUP_APPROVAL,
+    ("elaheh.jafari", "الهه", "جعفری", "40031096", State.ADVISOR_PENDING,
      "سامانه تشخیص چهره برای حضور و غیاب خودکار کلاس‌ها",
      "A Face-Recognition System for Automatic Class Attendance"),
     ("mohammad.taheri", "محمد", "طاهری", "40031097", State.COUNCIL_APPROVAL,
@@ -125,17 +141,17 @@ class Command(BaseCommand):
             users[alias] = u
 
         today = timezone.localdate()
-        base = dict(advisor=users["advisor1"], department=dept, academic_year=1405,
+        base = dict(department=dept, academic_year=1405,
                     semester=Semester.FIRST, registration_date=today)
 
         case1, _ = ProjectCase.objects.get_or_create(
             author=users["student1"], academic_year=1405, semester=Semester.FIRST,
-            defaults={**base, "state": State.DRAFTING,
+            defaults={**base, "advisor": users[ADVISORS["student1"]], "state": State.DRAFTING,
                       "title_fa": BASE_TITLES["student1"][0], "title_en": BASE_TITLES["student1"][1]})
 
         case2, _ = ProjectCase.objects.get_or_create(
             author=users["external1"], academic_year=1405, semester=Semester.FIRST,
-            defaults={**base, "state": State.REFEREE_REVIEW, "edu_received_at": today,
+            defaults={**base, "advisor": users[ADVISORS["external1"]], "state": State.REFEREE_REVIEW, "edu_received_at": today,
                       "title_fa": BASE_TITLES["external1"][0], "title_en": BASE_TITLES["external1"][1]})
         for ref in ("referee1", "referee2"):
             RefereeAssignment.objects.get_or_create(
@@ -153,8 +169,9 @@ class Command(BaseCommand):
             satisfied_at=case2.edu_received_at)
 
         self.seed_case_ready_for_grading(users, dept, today)
-        for alias, (fa, en) in BASE_TITLES.items():     # پایگاه‌داده‌ی قدیمی با عنوان‌های قبلی هم به‌روز شود
-            ProjectCase.objects.filter(author=users[alias]).update(title_fa=fa, title_en=en)
+        for alias, (fa, en) in BASE_TITLES.items():     # پایگاه‌داده‌ی قدیمی با عنوان‌ها و راهنمای قبلی هم به‌روز شود
+            ProjectCase.objects.filter(author=users[alias]).update(
+                title_fa=fa, title_en=en, advisor=users[ADVISORS[alias]])
         if options["full"]:
             self.seed_cases_in_every_state(users, dept, today)
 
@@ -170,7 +187,7 @@ class Command(BaseCommand):
     def seed_case_ready_for_grading(self, users, dept, today):
         """
         پرونده‌ی ۳: همه‌ی مراحل را در گذشته طی کرده و روز دفاعش همین امروز است.
-        چون نمره فقط از روز دفاع به بعد قابل‌ثبت است، با این پرونده می‌شود آخرین مرحله را آزمود (advisor1).
+        چون نمره فقط از روز دفاع به بعد قابل‌ثبت است، با این پرونده می‌شود آخرین مرحله را آزمود (سلیمان فلاح).
         """
         author = users["student3"]
         if ProjectCase.objects.filter(author=author).exists():
@@ -178,7 +195,7 @@ class Command(BaseCommand):
         registered = today - timedelta(days=210)
         year, semester = rules.current_term(registered)
         case = ProjectCase.objects.create(
-            author=author, advisor=users["advisor1"], department=dept,
+            author=author, advisor=users[ADVISORS["student3"]], department=dept,
             title_fa=BASE_TITLES["student3"][0], title_en=BASE_TITLES["student3"][1],
             academic_year=year, semester=semester, registration_date=registered,
             state=State.DEFENSE_SCHEDULED,
@@ -218,16 +235,28 @@ class Command(BaseCommand):
                 author.save()
             case = ProjectCase.objects.filter(author=author).first()
             if case:
-                ProjectCase.objects.filter(pk=case.pk).update(title_fa=title_fa, title_en=title_en)
+                ProjectCase.objects.filter(pk=case.pk).update(
+                    title_fa=title_fa, title_en=title_en, advisor=users[ADVISORS[username]])
+                self.log_return(case, users)
                 continue
             self.seed_case(author, users, dept, today, state, year, semester, title_fa, title_en)
 
+    @staticmethod
+    def log_return(case, users):
+        """پرونده‌ی «نیازمند اصلاح» رویداد بازگشت دارد تا دانشجو کادر نظر داور را ببیند (مثل مسیر واقعی)."""
+        if case.state == State.REVISION and not case.events.exists():
+            CaseEvent.objects.create(case=case, actor=users["referee1"], action="submit_review",
+                                     from_state=State.REFEREE_REVIEW, to_state=State.REVISION)
+
     def seed_case(self, author, users, dept, today, state, year, semester, title_fa, title_en):
         case = ProjectCase.objects.create(
-            author=author, advisor=users["advisor1"], department=dept,
+            author=author, advisor=users[ADVISORS[author.username]], department=dept,
             title_fa=title_fa, title_en=title_en,
             academic_year=year, semester=semester, state=state,
             registration_date=today - timedelta(days=20))
+        if state == State.ADVISOR_PENDING:      # درخواست راهنمایی هنوز پاسخ نگرفته و سندی در کار نیست
+            case.sync_deadlines()
+            return
         proposal = DocumentVersion.objects.create(case=case, kind=DocKind.PROPOSAL, number=1,
                                                   file=sample_pdf(), note="فایل نمونه", uploaded_by=author)
         order = list(State)
@@ -253,6 +282,7 @@ class Command(BaseCommand):
             DocumentVersion.objects.create(case=case, kind=DocKind.THESIS, number=1,
                                            file=sample_pdf("sample-thesis.pdf"), note="فایل نمونه",
                                            uploaded_by=author)
+        self.log_return(case, users)
         case.sync_deadlines()
         done = {DeadlineKind.PROPOSAL_SUBMISSION: case.edu_received_at,
                 DeadlineKind.GROUP_REVIEW: (today - timedelta(days=5)) if reached(State.COUNCIL_APPROVAL) else None,

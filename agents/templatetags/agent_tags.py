@@ -14,9 +14,13 @@ register = template.Library()
 
 
 @register.inclusion_tag("agents/_validation.html", takes_context=True)
-def validation_box(context, version):
-    """نتیجه‌ی بررسی خودکار قالب، زیر هر نسخه‌ی پیشنهاد در صفحه‌ی پرونده."""
-    if not services.visible_to(context["request"].user):
+def validation_box(context, version, case=None):
+    """
+    نتیجه‌ی بررسی خودکار قالب، زیر آخرین نسخه‌ی پیشنهاد در صفحه‌ی پرونده؛ فقط در مرحله‌ای که
+    خواننده با آن تصمیم می‌گیرد (services.validation_visible_to).
+    """
+    case = case or version.case
+    if not services.validation_visible_to(context["request"].user, case, version):
         return {"show": False}
     validation = DocumentValidation.objects.filter(version=version).first()
     return {"show": True, "version": version, "validation": validation,

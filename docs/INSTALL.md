@@ -136,7 +136,7 @@ python manage.py createsuperuser      # حساب ادمین خودتان
 | `amir.hosseini` | امیر حسینی | دانشجو، روز دفاعش امروز است؛ برای ثبت نمره |
 | `kamran.shirazi` | کامران شیرازی | نویسنده غیردانشجو |
 | `mahsa.rahimi`، `reza.sadeghi`، `niloofar.kazemi`، `pouria.abbasi`، `elaheh.jafari`، `mohammad.taheri`، `fatemeh.mousavi`، `alireza.niknam`، `zahra.babaei` | | دانشجو؛ فقط با `--full`، هر کدام در یک وضعیت میانی |
-| `soleiman.fallah` | دکتر سلیمان فلاح | استاد راهنما |
+| `soleiman.fallah`، `leila.sharifi`، `omid.bagheri`، `kaveh.mirzaei` | دکتر فلاح، شریفی، باقری، میرزایی | استاد راهنما (هر استاد حداکثر دو دانشجو) |
 | `mehdi.zakeri`، `narges.rezaei`، `parisa.karimi`، `hossein.mousavi` | دکتر ذاکری، رضایی، کریمی، موسوی | داور |
 | `ali.ahmadi` | دکتر علی احمدی | مدیر گروه |
 | `maryam.salehi` | مریم صالحی | کارشناس آموزش دانشکده |

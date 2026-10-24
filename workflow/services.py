@@ -16,12 +16,12 @@ from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import F, Max, Q
 from django.utils import timezone
 
 from . import rules
 from . import statemachine as sm
-from .enums import DeadlineKind, DocKind, ReviewDecision, State, UserType
+from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, State, UserType
 from .jalali import fa_digits, to_jalali
 from .models import (CaseEvent, Deadline, DocumentVersion, ProjectCase, RefereeAssignment,
                      Review, User)
@@ -47,7 +47,7 @@ def cases_for(user):
     """پرونده‌هایی که کاربر حق دیدنشان را دارد (پایه‌ی کنترل دسترسی همه‌ی صفحه‌ها)."""
     qs = (ProjectCase.objects.select_related("author", "advisor", "department")
           .prefetch_related("referee_assignments", "deadlines"))
-    if user.is_superuser or user.user_type == UserType.EDU_STAFF:
+    if sees_all_projects(user):
         return qs
     mine = Q(author=user) | Q(advisor=user) | Q(referee_assignments__referee=user)
     if user.is_department_head and user.department_id:
@@ -55,13 +55,34 @@ def cases_for(user):
     return qs.filter(mine).distinct()
 
 
+def sees_all_projects(user):
+    """آموزش دانشکده (و مدیر سامانه) فهرست همه‌ی پروژه‌ها را می‌بیند."""
+    return user.is_superuser or user.user_type == UserType.EDU_STAFF
+
+
 def latest_version(case, kind):
     return case.versions.filter(kind=kind).order_by("-number").first()
 
 
+# پرونده‌هایی که راهنمایشان هنوز استاد را «مشغول» نکرده‌اند (درخواست رد یا بی‌پاسخ، یا پروژه تمام شده)
+_NOT_COUNTED_FOR_ADVISOR = (State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.REJECTED,
+                            State.CANCELLED, State.COMPLETED)
+
+
+def advisee_count(advisor):
+    """تعداد دانشجویانی که استاد اکنون راهنمایشان است (درخواست‌های پذیرفته‌شده و پروژه‌های جاری)."""
+    return ProjectCase.objects.filter(advisor=advisor).exclude(state__in=_NOT_COUNTED_FOR_ADVISOR).count()
+
+
+def advisor_has_room(advisor):
+    return advisee_count(advisor) < rules.MAX_ADVISEES
+
+
 def eligible_advisors():
-    return (User.objects.filter(user_type=UserType.FACULTY, department__isnull=False, is_active=True)
-            .select_related("department").order_by("last_name", "first_name"))
+    """استادانی که دانشجو می‌تواند از آن‌ها درخواست راهنمایی کند: ظرفیتشان پر نشده باشد."""
+    faculty = (User.objects.filter(user_type=UserType.FACULTY, department__isnull=False, is_active=True)
+               .select_related("department").order_by("last_name", "first_name"))
+    return faculty.exclude(pk__in=[u.pk for u in faculty if not advisor_has_room(u)])
 
 
 def eligible_referees(case):
@@ -110,7 +131,11 @@ def defense_is_ahead(case):
 
 def blocker(case, action, user):
     """پیش‌شرط‌هایی که به ورودی فرم نیاز ندارند. خروجی: متن دلیل، یا رشته‌ی خالی اگر مانعی نیست."""
-    if action == "submit_proposal":
+    if action == "advisor_accept":
+        if not advisor_has_room(case.advisor):
+            return (f"ظرفیت راهنمایی شما ({fa_digits(rules.MAX_ADVISEES)} دانشجو) پر است؛ "
+                    "این درخواست را رد کنید تا دانشجو استاد دیگری انتخاب کند.")
+    elif action == "submit_proposal":
         if not latest_version(case, DocKind.PROPOSAL):
             return "ابتدا فایل پیشنهاد را بارگذاری کنید."
     elif action == "resubmit_proposal":
@@ -155,6 +180,66 @@ def is_pending_for(case, user):
     return any(o.pending for o in available_actions(case, user))
 
 
+# ───────────────────────── نظر بازگشت، دسترسی به نسخه‌ها ─────────────────────────
+
+# گذارهایی که پرونده را با یک نظر مکتوب به دانشجو برمی‌گردانند
+_RETURN_TITLES = {
+    "advisor_return": "استاد راهنما پیشنهاد را برای اصلاح برگرداند",
+    "thesis_return": "استاد راهنما پایان‌نامه را برای اصلاح برگرداند",
+    "advisor_decline": "استاد راهنما درخواست راهنمایی شما را نپذیرفت؛ استاد دیگری انتخاب کنید",
+    "submit_review": "داوران پیشنهاد را برای اصلاح برگرداندند",
+}
+_STUDENT_STATES = (State.ADVISOR_SELECTION, State.DRAFTING, State.REVISION, State.IN_PROGRESS)
+
+
+def pending_feedback(case):
+    """
+    نظر ثبت‌شده‌ای که دانشجو باید پیش از ادامه بخواند، یا None.
+    فقط وقتی برمی‌گردد که آخرین تغییر وضعیتِ پرونده همان «بازگشت» باشد؛ پس با ارسال دوباره ناپدید می‌شود.
+    """
+    if case.state not in _STUDENT_STATES:
+        return None
+    last = case.events.exclude(from_state=F("to_state")).select_related("actor").last()
+    if last is None or last.to_state != case.state or last.action not in _RETURN_TITLES:
+        return None
+    if last.action == "submit_review":
+        version = latest_version(case, DocKind.PROPOSAL)
+        reviews = Review.objects.filter(version=version, decision=ReviewDecision.REVISE)
+        items = [{"who": str(r.assignment.referee), "note": r.comment}
+                 for r in reviews.select_related("assignment__referee")]
+    else:
+        items = [{"who": str(last.actor or "سامانه"), "note": last.note}]
+    return {"title": _RETURN_TITLES[last.action], "items": items, "at": last.created_at}
+
+
+def sees_all_versions(case, user):
+    """نسخه‌های پیشین سند را فقط نویسنده، استاد راهنما و آموزش دانشکده می‌بینند."""
+    return user.is_superuser or bool(case.roles_of(user) & {CaseRole.AUTHOR, CaseRole.ADVISOR, CaseRole.EDU})
+
+
+def visible_versions(case, user):
+    versions = case.versions.select_related("uploaded_by").prefetch_related("reviews__assignment__referee")
+    if sees_all_versions(case, user):
+        return versions.order_by("kind", "-number")
+    latest = [latest_version(case, kind).pk for kind in DocKind.values if latest_version(case, kind)]
+    return versions.filter(pk__in=latest).order_by("kind", "-number")
+
+
+def visible_events(case, user):
+    """تاریخچه‌ی پرونده؛ بارگذاری نسخه‌های پیشین فقط برای کسانی که حق دیدن آن نسخه‌ها را دارند."""
+    events = case.events.select_related("actor")
+    if sees_all_versions(case, user):
+        return events
+    latest = {kind: v.number for kind in DocKind.values if (v := latest_version(case, kind))}
+    return [e for e in events
+            if not e.action.startswith("upload_")
+            or e.data.get("version") == latest.get(e.action.removeprefix("upload_"))]
+
+
+def can_download(case, user, version):
+    return sees_all_versions(case, user) or version.pk == getattr(latest_version(case, version.kind), "pk", None)
+
+
 # ───────────────────────── اثرات هر گذار ─────────────────────────
 
 @dataclass
@@ -191,9 +276,18 @@ def _select_advisor(c):
     if (advisor is None or advisor.user_type != UserType.FACULTY or not advisor.department_id
             or advisor.pk == c.case.author_id):
         raise GuardFailed("استاد راهنما باید عضو هیئت‌علمی و عضو یک گروه آموزشی باشد.")
+    if not advisor_has_room(advisor):
+        raise GuardFailed(f"ظرفیت راهنمایی {advisor} پر است ({fa_digits(rules.MAX_ADVISEES)} دانشجو)؛ "
+                          "استاد دیگری را انتخاب کنید.")
     c.case.advisor = advisor
     c.case.department = advisor.department
     c.data["advisor_id"] = advisor.pk
+
+
+def _advisor_decline(c):
+    c.data["advisor_id"] = c.case.advisor_id
+    c.case.advisor = None
+    c.case.department = None
 
 
 def _edu_register(c):
@@ -226,11 +320,10 @@ def _submit_review(c):
         return State.REFEREE_REVIEW
     needs_revision = Review.objects.filter(assignment__case=c.case, version=version,
                                            decision=ReviewDecision.REVISE).exists()
-    return State.REVISION if needs_revision else State.GROUP_APPROVAL
-
-
-def _group_approve(c):
-    c.data["late"] = _satisfy(c.case, DeadlineKind.GROUP_REVIEW, c.today)
+    if needs_revision:
+        return State.REVISION
+    c.data["late"] = _satisfy(c.case, DeadlineKind.GROUP_REVIEW, c.today)   # داوری تمام شد
+    return State.COUNCIL_APPROVAL
 
 
 def _council_approve(c):
@@ -276,10 +369,10 @@ def _record_result(c):
 # گذارهایی که این‌جا نیستند (مثل advisor_approve) هیچ اثر جانبی جز تغییر وضعیت ندارند.
 _EFFECTS = {
     "select_advisor": _select_advisor,
+    "advisor_decline": _advisor_decline,
     "edu_register": _edu_register,
     "assign_referees": _assign_referees,
     "submit_review": _submit_review,
-    "group_approve": _group_approve,
     "council_approve": _council_approve,
     "thesis_approve": _thesis_approve,
     "schedule_defense": _schedule_defense,
@@ -351,6 +444,9 @@ EXTRA_ACTION_LABELS = {
     "edit_case": "ویرایش عنوان پرونده",
     "upload_proposal": "بارگذاری نسخه‌ی پیشنهاد",
     "upload_thesis": "بارگذاری نسخه‌ی پایان‌نامه",
+    # اقدام‌های حذف‌شده از گردش‌کار؛ فقط برای نمایش تاریخچه‌ی پرونده‌های قدیمی
+    "group_approve": "تصویب پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
+    "group_reject": "رد پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
 }
 
 

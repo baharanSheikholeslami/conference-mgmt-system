@@ -63,6 +63,28 @@ def visible_to(user):
     return user.is_superuser or user.user_type == UserType.EDU_STAFF
 
 
+def validation_visible_to(user, case, version):
+    """
+    بررسی خودکار قالب فقط روی آخرین نسخه‌ی پیشنهاد و فقط در مرحله‌ی تصمیم خواننده دیده می‌شود:
+      • دانشجو: هنگام تدوین/اصلاح، پیش از ارسال پیشنهاد
+      • استاد راهنما: هنگام تأیید پیشنهاد (در انتظار تأیید استاد راهنما)
+      • داور: هنگام داوری
+    در حالت سایه فقط آموزش دانشکده و مدیر سامانه می‌بینند (visible_to).
+    """
+    if not visible_to(user):
+        return False
+    if shadow():
+        return True
+    latest = wf.latest_version(case, DocKind.PROPOSAL)
+    if latest is None or latest.pk != version.pk:
+        return False
+    roles = case.roles_of(user)
+    return bool(
+        (CaseRole.AUTHOR in roles and case.state in (State.DRAFTING, State.REVISION))
+        or (CaseRole.ADVISOR in roles and case.state == State.ADVISOR_REVIEW)
+        or (CaseRole.REFEREE in roles and case.state == State.REFEREE_REVIEW))
+
+
 def _finish(run, status=None, error="", model=""):
     """یک درخواست ناهم‌زمان را می‌بندد؛ بدون status یعنی «انجام نشد» (error دلیل آن است)."""
     run.status = status or run.Status.ERROR

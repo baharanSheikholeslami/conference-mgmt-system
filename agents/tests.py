@@ -181,7 +181,8 @@ class AgentTestCase(WorkflowTestCase):
                                 headers=headers)
 
     def drafting_case(self):
-        return self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        case = self.do(self.new_case(), "select_advisor", self.student, advisor=self.advisor)
+        return self.do(case, "advisor_accept", self.advisor)
 
     def upload(self, case, file=None):
         """بارگذاری پیشنهاد، همراه با اجرای قلاب‌های پس از commit (مثل یک درخواست واقعی)."""
@@ -319,6 +320,42 @@ class ValidationTests(AgentTestCase):
 
 
 # ───────────────────────── ۲. دستیار RAG ─────────────────────────
+
+class ValidationVisibilityTests(AgentTestCase):
+    """بررسی خودکار قالب: برای دانشجو هنگام ارسال پیشنهاد، برای راهنما و داور هنگام تأیید؛ نه جای دیگر."""
+
+    def sees(self, user, case):
+        self.client.force_login(user)
+        return "بررسی خودکار قالب" in self.client.get(reverse("case_detail", args=[case.pk])).content.decode()
+
+    def test_student_sees_it_only_while_drafting(self):
+        case = self.drafting_case()
+        self.upload(case)
+        self.assertTrue(self.sees(self.student, case))
+        for user in (self.advisor, self.edu):                       # راهنما هنوز مرحله‌ی تأیید نرسیده است
+            self.assertFalse(self.sees(user, case), user.username)
+        case = self.do(case, "submit_proposal", self.student)
+        self.assertFalse(self.sees(self.student, case))             # پس از ارسال دیگر برای دانشجو نیست
+        self.assertTrue(self.sees(self.advisor, case))              # مرحله‌ی تأیید راهنما
+        case = self.do(case, "advisor_approve", self.advisor)
+        self.assertFalse(self.sees(self.advisor, case))
+
+    def test_referee_sees_it_while_reviewing_and_only_for_the_latest_version(self):
+        case = self.drafting_case()
+        self.upload(case)
+        case = self.do(case, "submit_proposal", self.student)
+        case = self.do(case, "advisor_return", self.advisor, note="اصلاح")
+        self.upload(case)                                           # نسخه‌ی ۲
+        case = self.do(case, "submit_proposal", self.student)
+        case = self.do(case, "advisor_approve", self.advisor)
+        case = self.do(case, "edu_register", self.edu)
+        case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
+        self.assertTrue(self.sees(self.ref1, case))
+        self.assertFalse(self.sees(self.head, case))
+        self.client.force_login(self.ref1)
+        page = self.client.get(reverse("case_detail", args=[case.pk])).content.decode()
+        self.assertEqual(page.count("بررسی خودکار قالب"), 1)
+
 
 class RagTests(AgentTestCase):
     MODEL = "test-embed"
@@ -543,7 +580,7 @@ class AdvisorSuggestionTests(AgentTestCase):
         self.assertEqual(self.case.state, State.ADVISOR_SELECTION)       # عامل خودش استادی انتخاب نکرد
         self.client.post(self.form_url, {"advisor": self.advisor.pk})     # دانشجو رتبه‌ی دوم را برگزید
         self.case.refresh_from_db()
-        self.assertEqual((self.case.state, self.case.advisor), (State.DRAFTING, self.advisor))
+        self.assertEqual((self.case.state, self.case.advisor), (State.ADVISOR_PENDING, self.advisor))
 
     def test_too_short_interests_and_wrong_people_are_rejected(self):
         self.client.force_login(self.student)
@@ -555,7 +592,7 @@ class AdvisorSuggestionTests(AgentTestCase):
         case = self.do(self.case, "select_advisor", self.student, advisor=self.advisor)
         self.client.force_login(self.student)
         self.assertEqual(self.client.post(self.url, {"interests": self.INTERESTS}).status_code, 403)
-        self.assertEqual(case.state, State.DRAFTING)
+        self.assertEqual(case.state, State.ADVISOR_PENDING)
 
 
 @override_settings(AGENTS_SHADOW_MODE=True, AGENTS_SHADOW_MAILBOX="shadow@example.com")
@@ -759,10 +796,9 @@ class ReminderTests(AgentTestCase):
         case = self.do(case, "advisor_approve", self.advisor)
         case = self.do(case, "edu_register", self.edu)                  # مهلت تحویل پیشنهاد «انجام شد»
         self.assertEqual(self.stages(self.due), [])
-        self.assertIn("پایان داوری در گروه آموزشی", labels(self.due))   # مهلت بعدی جای آن را گرفته است
+        self.assertIn("پایان داوری پیشنهاد توسط داوران", labels(self.due))   # مهلت بعدی جای آن را گرفته است
         case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
         case = self.do(case, "submit_review", self.ref1, decision="approve")
-        case = self.do(case, "group_approve", self.head)
         case = self.do(case, "council_approve", self.edu)
         earliest = case.deadlines.get(kind=DeadlineKind.DEFENSE_EARLIEST).due_date
         for offset in (-3, 0, 5):                                       # «زودترین تاریخ دفاع» سررسید نیست

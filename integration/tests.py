@@ -43,7 +43,7 @@ class ScenarioTests(TestCase):
         (result,) = self.run_scenarios([broken])
         self.assertFalse(result.ok)
         self.assertEqual(len(result.steps), 2)               # پس از گام نادرست ادامه نمی‌دهد
-        self.assertEqual(result.steps[1].got, State.DRAFTING.label)
+        self.assertEqual(result.steps[1].got, State.ADVISOR_PENDING.label)
 
     def test_a_rule_violation_that_succeeds_is_a_failure(self):
         scenario = BY_KEY["cancel"]
@@ -55,8 +55,8 @@ class ScenarioTests(TestCase):
 
     def test_reminder_mismatch_is_reported(self):
         scenario = BY_KEY["late_and_reminders"]
-        wrong = replace(scenario.steps[3], payload={"expect": {DeadlineKind.PROPOSAL_SUBMISSION: ("d7", ["@author"])}})
-        (result,) = self.run_scenarios([replace(scenario, steps=(*scenario.steps[:3], wrong))])
+        wrong = replace(scenario.steps[4], payload={"expect": {DeadlineKind.PROPOSAL_SUBMISSION: ("d7", ["@author"])}})
+        (result,) = self.run_scenarios([replace(scenario, steps=(*scenario.steps[:4], wrong))])
         self.assertFalse(result.steps[-1].ok)
         self.assertIn("d14", result.steps[-1].detail)
 
@@ -67,7 +67,7 @@ class ScenarioTests(TestCase):
         self.assertEqual(ProjectCase.objects.count(), before)
 
     def test_cleanup_only_touches_scenario_cases(self):
-        self.run_scenarios([BY_KEY["cancel"], BY_KEY["group_reject"]])
+        self.run_scenarios([BY_KEY["cancel"], BY_KEY["council_reject"]])
         other = User.objects.create_user("real_student")
         ProjectCase.objects.create(author=other, title_fa="پرونده‌ی واقعی", academic_year=1405,
                                    semester="first", registration_date="2026-10-01")

@@ -11,6 +11,7 @@ from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.messages.views import SuccessMessageMixin
 from django.core.exceptions import PermissionDenied
+from django.db.models import F, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -20,12 +21,12 @@ from django.views.decorators.http import require_GET
 from agents import services as agents
 
 from . import forms, rules, services
-from .enums import DocKind, State
-from .models import DocumentVersion
+from .enums import CaseRole, DocKind, State, UserType
+from .models import DocumentVersion, ProjectCase
 
 # ترتیب مسیر اصلی، برای نوار پیشرفت صفحه‌ی پرونده («اصلاح» هم‌ردیف «داوری» است)
-STAGES = [State.ADVISOR_SELECTION, State.DRAFTING, State.ADVISOR_REVIEW, State.EDU_REGISTRATION,
-          State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW, State.GROUP_APPROVAL,
+STAGES = [State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.DRAFTING, State.ADVISOR_REVIEW,
+          State.EDU_REGISTRATION, State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW,
           State.COUNCIL_APPROVAL, State.IN_PROGRESS, State.THESIS_ADVISOR_REVIEW,
           State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED, State.COMPLETED]
 STAGE_OF = {state: i for i, state in enumerate(STAGES, 1)} | {
@@ -52,6 +53,7 @@ class Row:
     roles: list
     offers: list
     deadline: object
+    role_set: frozenset = frozenset()
 
     @property
     def todo(self):
@@ -66,16 +68,55 @@ class PasswordChange(SuccessMessageMixin, auth_views.PasswordChangeView):
     extra_context = {"title": "تغییر رمز عبور", "submit_label": "ذخیره‌ی رمز جدید"}
 
 
+def _waiting_days(case):
+    """چند روز است که پرونده در وضعیت فعلی منتظر مانده (از آخرین تغییر وضعیت)."""
+    last = case.events.exclude(from_state=F("to_state")).last()
+    since = timezone.localtime(last.created_at).date() if last else case.registration_date
+    return max((timezone.localdate() - since).days, 0)
+
+
+def _reminders(rows):
+    """کارت یادآور استاد راهنما و داور: چیزهایی که منتظر بررسی و تأیید اوست."""
+    reviewing = {CaseRole.ADVISOR, CaseRole.REFEREE}
+    return [{"case": r.case, "what": [o.transition.label for o in r.todo],
+             "as": [role.label for role in sorted(r.role_set & reviewing)],
+             "days": _waiting_days(r.case), "deadline": r.deadline}
+            for r in rows if r.todo and r.role_set & reviewing]
+
+
+def _timers(rows, user):
+    """تایمر مهلت‌ها برای دانشجو: هر مهلت باز پرونده‌های خودش، با فاصله‌ی ماه و روز."""
+    today = timezone.localdate()
+    timers = []
+    for r in rows:
+        if CaseRole.AUTHOR not in r.role_set or r.case.is_terminal:
+            continue
+        for d in r.case.deadlines.all():
+            if d.satisfied_at is None and not d.is_lower_bound:
+                timers.append({"case": r.case, "deadline": d, "key": d.due_date})
+    return sorted(timers, key=lambda t: t["key"])
+
+
 @login_required
 def dashboard(request):
     user = request.user
     rows = [Row(case=c, roles=[r.label for r in sorted(c.roles_of(user))],
-                offers=services.available_actions(c, user), deadline=services.next_deadline(c))
+                offers=services.available_actions(c, user), deadline=services.next_deadline(c),
+                role_set=frozenset(c.roles_of(user)))
             for c in services.cases_for(user)]
+    faculty = user.user_type == UserType.FACULTY
     return render(request, "workflow/dashboard.html", {
         "pending": [r for r in rows if r.todo],
         "others": [r for r in rows if not r.todo],
         "can_create": services.can_create_case(user),
+        "reminders": _reminders(rows) if faculty else [],
+        "timers": _timers(rows, user),
+        "faculty": faculty,
+        "advisees": [r for r in rows if CaseRole.ADVISOR in r.role_set and r.case.state not in (
+            State.ADVISOR_SELECTION, State.REJECTED, State.CANCELLED)] if faculty else [],
+        "refereeing": [r for r in rows if CaseRole.REFEREE in r.role_set] if faculty else [],
+        "capacity": {"used": services.advisee_count(user), "max": rules.MAX_ADVISEES} if faculty else None,
+        "is_edu": services.sees_all_projects(user),
     })
 
 
@@ -111,11 +152,12 @@ def case_detail(request, pk):
         "cancel_offer": next((o for o in offers if o.transition.action == "cancel"), None),
         "upload_kind": services.uploadable_kind(case, user),
         "can_edit": services.can_edit(case, user),
-        "versions": case.versions.select_related("uploaded_by")
-                        .prefetch_related("reviews__assignment__referee").order_by("kind", "-number"),
+        "versions": services.visible_versions(case, user),
+        "feedback": services.pending_feedback(case),
+        "is_edu": services.sees_all_projects(user),
         "assignments": case.referee_assignments.select_related("referee"),
         "deadlines": case.deadlines.all(),
-        "events": case.events.select_related("actor"),
+        "events": services.visible_events(case, user),
         "stage": stage, "stage_count": len(STAGES),
         "progress": round(100 * stage / len(STAGES)) if stage else None,
     })
@@ -164,7 +206,8 @@ def document_upload(request, pk):
 def document_download(request, pk):
     """فایل‌ها از MEDIA_URL عمومی سرو نمی‌شوند؛ فقط کسی که پرونده را می‌بیند می‌تواند دانلود کند."""
     version = get_object_or_404(DocumentVersion, pk=pk)
-    if not services.cases_for(request.user).filter(pk=version.case_id).exists():
+    case = services.cases_for(request.user).filter(pk=version.case_id).first()
+    if case is None or not services.can_download(case, request.user, version):
         raise Http404
     extension = version.file.name.rsplit(".", 1)[-1]
     return FileResponse(version.file.open("rb"), as_attachment=True,
@@ -196,7 +239,32 @@ def case_action(request, pk, action):
             return redirect("case_detail", pk=case.pk)
     return render(request, "workflow/form.html", {
         "form": form, "case": case, "title": t.label, "submit_label": "ثبت",
-        "danger": action in ("cancel", "group_reject", "council_reject"),
+        "danger": action in ("cancel", "advisor_decline", "council_reject"),
         # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم انتخاب استاد راهنما / تخصیص داور (فقط نمایش؛ انتخاب با انسان است)
         "suggestions": agents.suggestion_panel(case, SUGGESTION_PURPOSE[action], request.user)
                        if action in SUGGESTION_PURPOSE else None})
+
+
+@login_required
+def project_list(request):
+    """فهرست همه‌ی پروژه‌ها با وضعیتشان، برای آموزش دانشکده؛ هر ردیف به صفحه‌ی جزئیات پرونده می‌رود."""
+    if not services.sees_all_projects(request.user):
+        raise PermissionDenied
+    q = request.GET.get("q", "").strip()
+    state = request.GET.get("state", "")
+    cases = ProjectCase.objects.select_related("author", "advisor").order_by("-registration_date", "-pk")
+    counts = {s: 0 for s in State}
+    for s in cases.values_list("state", flat=True):
+        counts[s] += 1
+    if state in State.values:
+        cases = cases.filter(state=state)
+    if q:
+        cases = cases.filter(Q(title_fa__icontains=q) | Q(title_en__icontains=q)
+                             | Q(author__first_name__icontains=q) | Q(author__last_name__icontains=q)
+                             | Q(author__username__icontains=q) | Q(author__student_number__icontains=q)
+                             | Q(advisor__first_name__icontains=q) | Q(advisor__last_name__icontains=q))
+    return render(request, "workflow/project_list.html", {
+        "cases": cases, "q": q, "state": state,
+        "state_counts": [(s, counts[s]) for s in State if counts[s]],
+        "total": sum(counts.values()),
+    })

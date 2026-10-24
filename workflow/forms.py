@@ -127,7 +127,12 @@ class SelectAdvisorForm(ActionForm):
         ranks = agents.suggestion_ranks(self.case, "advisor", self.user)
         field.queryset = _ranked(services.eligible_advisors(), ranks)
         field.label_from_instance = lambda u: f"{u} — گروه {u.department}" + (
-            f" — {u.expertise}" if u.expertise else "") + _rank_label(ranks, u)
+            f" — {u.expertise}" if u.expertise else "") + (
+            f" — راهنمای {fa_digits(services.advisee_count(u))} از {fa_digits(rules.MAX_ADVISEES)} دانشجو"
+        ) + _rank_label(ranks, u)
+        field.help_text = ("درخواست شما برای استاد ارسال می‌شود و پس از پذیرش او پرونده به مرحله‌ی تدوین می‌رود. "
+                           f"هر استاد حداکثر راهنمای {fa_digits(rules.MAX_ADVISEES)} دانشجوست؛ "
+                           "استادانی که ظرفیتشان پر شده در فهرست نیستند.")
         del self.fields["note"]
 
 

@@ -1,0 +1,19 @@
+{% load portal %}
+<div class="table-wrap stacked">
+<table>
+  <thead>
+    <tr><th>دانشجو</th><th>شماره دانشجویی</th><th>عنوان پروژه</th><th>وضعیت</th>{% if person == "referee" %}<th>استاد راهنما</th>{% endif %}</tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td data-label="دانشجو"><strong>{{ row.case.author }}</strong></td>
+      <td data-label="شماره دانشجویی">{{ row.case.author.student_number|fa|default:"—" }}</td>
+      <td><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=row.case %}</td>
+      {% if person == "referee" %}<td data-label="استاد راهنما">{{ row.case.advisor|default:"—" }}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

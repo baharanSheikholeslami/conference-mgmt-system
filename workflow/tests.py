@@ -30,7 +30,7 @@ class StateMachineTests(SimpleTestCase):
             self.assertIn(t.actor, list(CaseRole))
 
     def test_rejections_and_returns_require_a_note(self):
-        for a in ("advisor_return", "group_reject", "council_reject", "thesis_return", "cancel"):
+        for a in ("advisor_return", "advisor_decline", "council_reject", "thesis_return", "cancel"):
             self.assertTrue(sm.TRANSITIONS[a].note_required, a)
 
 

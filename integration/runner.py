@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from agents import services as agents
 from agents.models import DocumentValidation, Notification, SuggestionRun
+from workflow import rules
 from workflow import services as wf
 from workflow.enums import DocKind, State, UserType
 from workflow.models import Department, ProjectCase, Review, User
@@ -137,6 +138,12 @@ class Runner:
     # ── اجرای همه ──
     def run(self, scenarios=None):
         scenarios = scenarios or SCENARIOS
+        # همه‌ی سناریوها یک «استاد راهنما»ی مشترک دارند؛ سقف دو دانشجو را بالا می‌بریم تا سناریوها
+        # با هم تداخل نکنند (خودِ سقف در workflow/test_services.py آزموده می‌شود)
+        with mock.patch.object(rules, "MAX_ADVISEES", 1000):
+            return self._run_scenarios(scenarios)
+
+    def _run_scenarios(self, scenarios):
         if self.live:
             return self._run_all(scenarios)
         # آفلاین: عامل‌ها خاموش (هیچ تماسی با n8n نیست). اگر داده نگه داشته نمی‌شود، فایل‌های
