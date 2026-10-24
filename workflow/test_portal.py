@@ -115,6 +115,12 @@ class FormFlowTests(PortalTestCase):
                             "در انتظار پذیرش استاد راهنما")
         self.login(self.advisor)                       # استاد باید درخواست را بپذیرد
         self.assertEqual(len(self.client.get(reverse("dashboard")).context["pending"]), 1)
+        # پذیرش و رد کنار هم‌اند و نباید هم‌رنگ باشند
+        detail = self.client.get(reverse("case_detail", args=[case.pk]))
+        self.assertContains(detail, 'class="btn approve"')
+        self.assertContains(detail, 'class="btn reject"')
+        self.assertContains(self.client.get(reverse("case_action", args=[case.pk, "advisor_decline"])),
+                            'class="btn reject solid"')
         self.post_action(case, "advisor_accept")
         case.refresh_from_db()
         self.assertEqual(case.state, State.DRAFTING)

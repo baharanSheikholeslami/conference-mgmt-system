@@ -25,6 +25,18 @@ class Transition:
     guards: tuple = ()
     effects: tuple = ()
 
+    @property
+    def tone(self):
+        """رنگ و معنای دکمه‌ی این اقدام در رابط کاربری (approve / return / reject / primary)."""
+        return ACTION_TONES.get(self.action, "primary")
+
+
+# معنای هر اقدام برای رنگ دکمه: وقتی چند اقدام کنار هم‌اند (مثلاً پذیرش و رد) نباید هم‌رنگ باشند
+ACTION_TONES = {
+    "advisor_accept": "approve", "advisor_approve": "approve", "council_approve": "approve", "thesis_approve": "approve",
+    "advisor_return": "return", "thesis_return": "return",
+    "advisor_decline": "reject", "council_reject": "reject", "cancel": "reject",
+}
 
 INITIAL_STATE = S.ADVISOR_SELECTION
 TERMINAL_STATES = (S.COMPLETED, S.REJECTED, S.CANCELLED)

@@ -238,8 +238,10 @@ def case_action(request, pk, action):
             messages.success(request, f"«{t.label}» انجام شد.")
             return redirect("case_detail", pk=case.pk)
     return render(request, "workflow/form.html", {
-        "form": form, "case": case, "title": t.label, "submit_label": "ثبت",
-        "danger": action in ("cancel", "advisor_decline", "council_reject"),
+        "form": form, "case": case, "title": t.label,
+        # تأیید، بازگرداندن و رد با نام خود اقدام تأیید می‌شوند تا کاربر بداند دقیقاً چه چیزی ثبت می‌شود
+        "submit_label": t.label if t.tone != "primary" else "ثبت",
+        "tone": t.tone,
         # فاز ۳: کادر «پیشنهاد سامانه» بالای فرم انتخاب استاد راهنما / تخصیص داور (فقط نمایش؛ انتخاب با انسان است)
         "suggestions": agents.suggestion_panel(case, SUGGESTION_PURPOSE[action], request.user)
                        if action in SUGGESTION_PURPOSE else None})

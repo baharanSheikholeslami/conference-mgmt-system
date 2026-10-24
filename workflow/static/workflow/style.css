@@ -15,17 +15,21 @@
 :root {
   /* رنگ‌ها: کنتراست متن روی سفید دست‌کم ۴٫۵ به ۱ */
   --bg: #f5f7fa; --surface: #ffffff; --surface-2: #f8fafc; --card: var(--surface);
-  --ink: #1d1d1f; --ink-2: #3c4043; --muted: #5f6368; --line: #e6e8eb; --line-strong: #d2d6dc;
-  --accent: #1a66d2; --accent-hover: #1557b0; --accent-ink: #ffffff; --accent-soft: #e8f0fe; --accent-line: #c6dafc;
-  --ok: #137333; --ok-soft: #e6f4ea; --warn: #8a4b00; --warn-soft: #fef3e0;
-  --danger: #c5221f; --danger-soft: #fce8e6; --neutral-soft: #f1f3f4;
+  --ink: #1b2233; --ink-2: #3a4152; --muted: #5b6273; --line: #e3e7ee; --line-strong: #cfd5df;
+  /* آبی اصلی: سرمه‌ای دانشگاه؛ متن سفید روی آن حدود ۱۰ به ۱ */
+  --accent: #0d3b8e; --accent-hover: #0a2e70; --accent-strong: #0b2a5e; --accent-ink: #ffffff;
+  --accent-soft: #e8eef9; --accent-soft-hover: #d6e1f4; --accent-line: #bccbe8;
+  /* معنای اقدام‌ها: تأیید = سبز، بازگرداندن برای اصلاح = نارنجی، رد/لغو = قرمز */
+  --ok: #137333; --ok-hover: #0d5c28; --ok-soft: #e6f4ea; --ok-line: #a8d5b5;
+  --warn: #8a4b00; --warn-hover: #6f3c00; --warn-soft: #fef3e0; --warn-line: #f0c27a;
+  --danger: #c5221f; --danger-hover: #a50e0e; --danger-soft: #fce8e6; --danger-line: #f2b8b5; --neutral-soft: #f0f2f5;
   --ai: #6b4fd8; --ai-soft: #f3f0fd; --ai-line: #e0d9fa;
   /* شکل و سایه */
   --radius-sm: 10px; --radius: 16px; --radius-lg: 22px;
   --shadow-1: 0 1px 2px rgba(16, 24, 40, .04), 0 1px 3px rgba(16, 24, 40, .06);
   --shadow-2: 0 4px 12px rgba(16, 24, 40, .08), 0 2px 4px rgba(16, 24, 40, .04);
   --shadow-3: 0 18px 40px rgba(16, 24, 40, .16);
-  --focus: 0 0 0 3px rgba(26, 102, 210, .35);
+  --focus: 0 0 0 3px rgba(13, 59, 142, .35);
   --ease: cubic-bezier(.2, .7, .3, 1);
 }
 * { box-sizing: border-box; }
@@ -64,12 +68,9 @@ small, .muted { color: var(--muted); }
 }
 .brand { display: flex; align-items: center; gap: .7rem; color: var(--ink); min-width: 0; }
 .brand:hover { color: var(--ink); text-decoration: none; }
-.brand-mark {
-  flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #fff;
-  background: linear-gradient(135deg, #4285f4 0%, #1a66d2 55%, #6b4fd8 100%); box-shadow: var(--shadow-1);
-}
+.brand-logo { flex: none; width: 40px; height: auto; display: block; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.35; min-width: 0; }
-.brand-text strong { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-text strong { font-size: 1rem; color: var(--accent-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-text small { font-size: .78rem; }
 .account { display: flex; align-items: center; gap: .35rem; }
 .account form { margin: 0; }
@@ -114,13 +115,13 @@ main.narrow { max-width: 600px; }
 }
 .stat .num { font-size: 1.9rem; font-weight: 700; line-height: 1.3; }
 .stat .label { color: var(--muted); font-size: .88rem; }
-.stat.primary { background: linear-gradient(135deg, #e8f0fe, #f3f0fd); border-color: var(--accent-line); }
+.stat.primary { background: var(--accent-soft); border-color: var(--accent-line); }
 .stat.primary .num { color: var(--accent); }
 
 /* پیام‌ها */
 .msg {
   display: flex; gap: .65rem; align-items: flex-start; border-radius: var(--radius-sm); padding: .75rem 1rem;
-  margin-bottom: 1.25rem; border: 1px solid transparent; background: var(--accent-soft); color: #174ea6;
+  margin-bottom: 1.25rem; border: 1px solid transparent; background: var(--accent-soft); color: var(--accent-strong);
   animation: msg-in .3s var(--ease);
 }
 .msg::before { content: "ℹ"; font-weight: 700; flex: none; width: 1.4rem; height: 1.4rem; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .7); font-size: .85rem; line-height: 1; margin-top: .2rem; }
@@ -141,14 +142,26 @@ main.narrow { max-width: 600px; }
 }
 .btn:hover { background: var(--accent-hover); color: var(--accent-ink); text-decoration: none; box-shadow: var(--shadow-1); }
 .btn:active { transform: scale(.98); }
-.btn.secondary { background: var(--accent-soft); color: var(--accent); }
-.btn.secondary:hover { background: #d7e5fc; color: var(--accent-hover); box-shadow: none; }
+/* انواع دکمه — هر معنا رنگ و نشانه‌ی خودش را دارد تا دو اقدام متفاوت کنار هم با هم اشتباه نشوند:
+   primary (اقدام اصلی، سرمه‌ای) · approve (تأیید، سبز) · return (بازگرداندن برای اصلاح، نارنجی)
+   reject/danger (رد یا لغو، قرمز) · secondary (کار جانبی، آبی کم‌رنگ) · ghost (کم‌اهمیت) */
+.btn.secondary { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
+.btn.secondary:hover { background: var(--accent-soft-hover); color: var(--accent-hover); box-shadow: none; }
 .btn.ghost { background: transparent; color: var(--ink-2); }
 .btn.ghost:hover { background: var(--neutral-soft); color: var(--ink); box-shadow: none; }
-.btn.danger { background: var(--surface); color: var(--danger); border-color: #f2b8b5; }
-.btn.danger:hover { background: var(--danger-soft); box-shadow: none; }
-.btn.danger.solid { background: var(--danger); color: #fff; border-color: var(--danger); }
-.btn.danger.solid:hover { background: #a50e0e; }
+.btn.approve { background: var(--ok); color: #fff; }
+.btn.approve:hover { background: var(--ok-hover); color: #fff; }
+.btn.return { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+.btn.return:hover { background: #fde6c0; color: var(--warn-hover); }
+.btn.danger, .btn.reject { background: var(--surface); color: var(--danger); border-color: var(--danger-line); }
+.btn.danger:hover, .btn.reject:hover { background: var(--danger-soft); color: var(--danger-hover); box-shadow: none; }
+.btn.danger.solid, .btn.reject.solid { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.danger.solid:hover, .btn.reject.solid:hover { background: var(--danger-hover); color: #fff; }
+/* نشانه‌ی کنار رنگ، برای کسانی که رنگ‌ها را از هم تشخیص نمی‌دهند؛ صفحه‌خوان آن را نمی‌خواند */
+.btn.approve::before, .btn.return::before, .btn.reject::before { font-weight: 700; font-size: .95em; line-height: 1; }
+.btn.approve::before { content: "✓"; content: "✓" / ""; }
+.btn.return::before { content: "↩"; content: "↩" / ""; }
+.btn.reject::before { content: "✕"; content: "✕" / ""; }
 .btn.disabled, .btn:disabled { background: var(--neutral-soft); color: #80868b; border-color: transparent; cursor: not-allowed; box-shadow: none; transform: none; }
 .btn.compact { min-height: 34px; padding: .2rem .9rem; font-size: .88rem; font-weight: 500; }
 .actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
@@ -156,7 +169,7 @@ main.narrow { max-width: 600px; }
   flex-basis: 100%; color: var(--warn); background: var(--warn-soft); font-size: .88rem;
   border-radius: var(--radius-sm); padding: .35rem .8rem; margin-top: -.15rem;
 }
-.todo { border-color: var(--accent-line); background: linear-gradient(180deg, #f6f9ff 0%, var(--surface) 70%); }
+.todo { border-color: var(--accent-line); border-inline-start: 4px solid var(--accent); }
 .todo > h2::before, .todo .card-head h2::before {
   content: ""; display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--accent);
   margin-inline-end: .55rem; vertical-align: middle; box-shadow: 0 0 0 4px var(--accent-soft);
@@ -166,7 +179,7 @@ main.narrow { max-width: 600px; }
 .badge {
   display: inline-flex; align-items: center; gap: .35rem; border-radius: 999px; padding: .05rem .7rem;
   font-size: .85rem; font-weight: 600; white-space: nowrap; line-height: 1.9;
-  background: var(--accent-soft); color: #174ea6;
+  background: var(--accent-soft); color: var(--accent-strong);
 }
 .badge.done { background: var(--ok-soft); color: var(--ok); }
 .badge.stopped { background: var(--danger-soft); color: var(--danger); }
@@ -207,7 +220,7 @@ td a.row-title:hover { color: var(--accent); }
 .case-hero h1 { font-size: 1.55rem; }
 .case-hero .sub { margin-top: .1rem; }
 .progress { height: 8px; background: #e8eaed; border-radius: 99px; overflow: hidden; margin: 1.1rem 0 .35rem; }
-.progress > span { display: block; height: 100%; background: linear-gradient(90deg, #6b4fd8, var(--accent)); border-radius: 99px; transition: width .6s var(--ease); }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s var(--ease); }
 .progress-label { display: flex; justify-content: space-between; color: var(--muted); font-size: .85rem; }
 .roles { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
 
@@ -257,13 +270,27 @@ form.stack .actions { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px 
 ul.errorlist { list-style: none; margin: 0 0 .35rem; padding: 0; color: var(--danger); font-size: .88rem; font-weight: 500; }
 ul.errorlist.nonfield { background: var(--danger-soft); border-radius: var(--radius-sm); padding: .7rem 1rem; margin-bottom: 1.25rem; font-size: .95rem; }
 
-/* صفحه‌ی ورود */
-.auth { max-width: 420px; margin: 2.5rem auto 0; }
-.auth .card { padding: 2rem 2rem 1.5rem; border-radius: var(--radius-lg); box-shadow: var(--shadow-2); }
-.auth-head { text-align: center; margin-bottom: 1.5rem; }
-.auth-head .brand-mark { width: 56px; height: 56px; border-radius: 16px; margin: 0 auto 1rem; }
-.auth-head p { margin: .3rem 0 0; font-size: .92rem; }
-.auth .btn { width: 100%; min-height: 46px; }
+/* صفحه‌ی ورود: عکس پردیس دانشگاه زیر یک لایه‌ی سرمه‌ای، تا کارت سفید فرم همیشه خوانا بماند */
+body.auth-page {
+  background-color: var(--accent-strong);
+  background-image: linear-gradient(180deg, rgba(11, 42, 94, .55) 0%, rgba(11, 42, 94, .82) 55%, rgba(8, 30, 68, .94) 100%),
+                    url("img/aut-campus.jpg");
+  background-size: cover; background-position: center 30%; background-attachment: fixed;
+}
+.auth-page .appbar { display: none; }
+.auth-page main { display: flex; align-items: center; justify-content: center; }
+.auth-page .site-footer { color: rgba(255, 255, 255, .8); }
+.auth { width: 100%; max-width: 440px; margin: 1.5rem auto 0; }
+.auth-brand { display: flex; align-items: center; gap: 1rem; color: #fff; margin-bottom: 1.25rem; text-shadow: 0 1px 8px rgba(0, 0, 0, .35); }
+.auth-brand img { flex: none; width: 64px; height: auto; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .35)); }
+.auth-brand p { margin: 0; display: flex; flex-direction: column; line-height: 1.6; }
+.auth-brand strong { font-size: 1.25rem; font-weight: 700; }
+.auth-brand span { font-size: .9rem; opacity: .9; }
+.auth .card { padding: 2rem 2rem 1.6rem; border-radius: var(--radius-lg); box-shadow: var(--shadow-3); border-color: transparent; }
+.auth-head { margin-bottom: 1.5rem; }
+.auth-head h1 { font-size: 1.35rem; color: var(--accent-strong); }
+.auth-head p { margin: .4rem 0 0; font-size: .9rem; }
+.auth .btn { width: 100%; min-height: 48px; font-size: 1rem; }
 
 /* صفحه‌های خطا */
 .state-page { text-align: center; padding: 2.5rem 1.5rem; }
@@ -276,6 +303,9 @@ ul.errorlist.nonfield { background: var(--danger-soft); border-radius: var(--rad
   .card { padding: 1.1rem 1.1rem; border-radius: 14px; }
   .appbar-inner { padding: .5rem 1rem; }
   .brand-text small, .user-chip { display: none; }
+  .brand-logo { width: 34px; }
+  body.auth-page { background-attachment: scroll; }
+  .auth .card { padding: 1.5rem 1.25rem 1.25rem; }
   h1 { font-size: 1.4rem; }
   .page-head .btn { width: 100%; }
 }

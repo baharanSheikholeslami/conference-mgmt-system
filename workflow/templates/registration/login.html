@@ -1,14 +1,17 @@
 {% extends "workflow/base.html" %}
+{% load static %}
 {% block title %}ورود{% endblock %}
+{% block body_class %}auth-page{% endblock %}
 {% block main_class %}narrow{% endblock %}
 {% block content %}
 <div class="auth">
+  <div class="auth-brand">
+    <img src="{% static 'workflow/img/aut-emblem-white.png' %}" width="72" height="77" alt="">
+    <p><strong>دانشگاه صنعتی امیرکبیر</strong><span>(پلی‌تکنیک تهران) — دانشکده مهندسی کامپیوتر</span></p>
+  </div>
   <div class="card">
     <div class="auth-head">
-      <div class="brand-mark" aria-hidden="true">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2.5 9 2.5 12 0v-5"/></svg>
-      </div>
-      <h1>ورود به سامانه</h1>
+      <h1>ورود به سامانه‌ی پروژه‌ی کارشناسی</h1>
       <p class="muted">با حساب کاربری دانشگاهی خود وارد شوید. نقش شما در هر پرونده (نویسنده، استاد راهنما، داور، مدیر گروه یا آموزش) خودکار تشخیص داده می‌شود.</p>
     </div>
     <form method="post" class="stack">
