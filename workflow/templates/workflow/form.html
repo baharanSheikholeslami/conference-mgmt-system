@@ -12,7 +12,7 @@
     {% csrf_token %}
     {{ form.as_div }}
     <div class="actions">
-      <button class="btn{% if danger %} danger solid{% endif %}" type="submit">{{ submit_label }}</button>
+      <button class="btn{% if tone == "approve" %} approve{% elif tone == "return" %} return{% elif tone == "reject" %} reject solid{% endif %}" type="submit">{{ submit_label }}</button>
       <a class="btn ghost" href="{% if case %}{% url 'case_detail' case.pk %}{% else %}{% url 'dashboard' %}{% endif %}">انصراف</a>
     </div>
   </form>

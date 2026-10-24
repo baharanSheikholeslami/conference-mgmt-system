@@ -41,12 +41,12 @@
         <span class="btn disabled" role="link" aria-disabled="true">{{ offer.transition.label }}</span>
         <span class="why">{{ offer.blocked }}</span>
       {% else %}
-        <a class="btn" href="{% url 'case_action' case.pk offer.transition.action %}">{{ offer.transition.label }}</a>
+        <a class="btn {{ offer.transition.tone }}" href="{% url 'case_action' case.pk offer.transition.action %}">{{ offer.transition.label }}</a>
       {% endif %}
     {% endfor %}
     {% if upload_kind %}<a class="btn secondary" href="{% url 'document_upload' case.pk %}">بارگذاری {% if upload_kind == "thesis" %}پایان‌نامه{% else %}پیشنهاد{% endif %}</a>{% endif %}
     {% if can_edit %}<a class="btn ghost" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
-    {% if cancel_offer %}<a class="btn danger" href="{% url 'case_action' case.pk 'cancel' %}">{{ cancel_offer.transition.label }}</a>{% endif %}
+    {% if cancel_offer %}<a class="btn reject" href="{% url 'case_action' case.pk 'cancel' %}">{{ cancel_offer.transition.label }}</a>{% endif %}
   </div>
 </section>
 {% endif %}
