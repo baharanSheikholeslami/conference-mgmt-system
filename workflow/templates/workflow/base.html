@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#0d3b8e">
+  <meta name="theme-color" content="#faf9f5">
   <title>{% block title %}سامانه مدیریت پروژه کارشناسی{% endblock %}</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{% static 'workflow/img/favicon-32.png' %}">
   <link rel="icon" type="image/png" sizes="64x64" href="{% static 'workflow/img/favicon-64.png' %}">
@@ -12,41 +12,54 @@
   <link rel="stylesheet" href="{% static_v 'workflow/style.css' %}">
   <link rel="stylesheet" href="{% static_v 'agents/agents.css' %}">
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}{% if user.is_authenticated %} has-sidebar{% endif %}">
   <a class="skip-link" href="#content">پرش به محتوای صفحه</a>
-  <header class="appbar">
-    <div class="appbar-inner">
-      <a class="brand" href="{% url 'dashboard' %}">
-        <img class="brand-logo" src="{% static 'workflow/img/aut-emblem.png' %}" width="40" height="43" alt="نشان دانشگاه صنعتی امیرکبیر">
-        <span class="brand-text">
-          <strong>مدیریت پروژه‌ی کارشناسی</strong>
-          <small>دانشکده مهندسی کامپیوتر، دانشگاه صنعتی امیرکبیر</small>
+  {% if user.is_authenticated %}
+  <aside class="sidebar" aria-label="منوی سامانه">
+    <a class="brand" href="{% url 'dashboard' %}">
+      <img class="brand-logo" src="{% static 'workflow/img/aut-emblem.png' %}" width="34" height="37" alt="نشان دانشگاه صنعتی امیرکبیر">
+      <span class="brand-text">
+        <strong>پروژه‌ی کارشناسی</strong>
+        <small>مهندسی کامپیوتر، امیرکبیر</small>
+      </span>
+    </a>
+    <details class="nav-drawer" open>
+      <summary class="nav-toggle" aria-label="منو">منو</summary>
+      <nav class="side-nav" aria-label="بخش‌ها">
+        <a href="{% url 'dashboard' %}"{% if request.resolver_match.url_name == "dashboard" %} aria-current="page"{% endif %}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 9.5 10 4l7 5.5V16a1 1 0 0 1-1 1h-3.5v-4.5h-5V17H4a1 1 0 0 1-1-1z"/></svg><span class="nav-label">داشبورد</span></a>
+        {% if user.is_superuser or user.user_type == "edu_staff" %}
+        <a href="{% url 'project_list' %}"{% if request.resolver_match.url_name == "project_list" %} aria-current="page"{% endif %}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h3.6l1.6 2h5.8A1.5 1.5 0 0 1 17 7.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/></svg><span class="nav-label">همه‌ی پروژه‌ها</span></a>
+        {% endif %}
+        <a href="{% url 'password_change' %}"{% if request.resolver_match.url_name == "password_change" %} aria-current="page"{% endif %}>
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 9V7a3 3 0 0 1 6 0v2M5.5 9h9a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-6a.5.5 0 0 1 .5-.5z"/></svg><span class="nav-label">تغییر رمز</span></a>
+      </nav>
+      <div class="side-account">
+        <span class="avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1" }}</span>
+        <span class="user-meta">
+          <strong>{{ user }}</strong>
+          <small>{{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %}</small>
         </span>
-      </a>
-      {% if user.is_authenticated %}
-        <nav class="account" aria-label="حساب کاربری">
-          {% if user.is_superuser or user.user_type == "edu_staff" %}<a class="btn ghost compact" href="{% url 'project_list' %}">همه‌ی پروژه‌ها</a>{% endif %}
-          <div class="user-chip">
-            <span class="avatar" aria-hidden="true">{{ user.first_name|default:user.username|slice:":1" }}</span>
-            <span class="user-meta">
-              <strong>{{ user }}</strong>
-              <small>{{ user.get_user_type_display }}{% if user.is_department_head %}، مدیر گروه{% endif %}</small>
-            </span>
-          </div>
-          <a class="btn ghost compact" href="{% url 'password_change' %}">تغییر رمز</a>
-          {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
-          <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn secondary compact" type="submit">خروج</button></form>
-        </nav>
-      {% endif %}
-    </div>
-  </header>
-  <main id="content" class="{% block main_class %}{% endblock %}">
-    {% if messages %}<div role="status" aria-live="polite">
-      {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
-    </div>{% endif %}
-    {% block content %}{% endblock %}
-  </main>
-  <footer class="site-footer">پروژه‌ی کارشناسی — دانشگاه صنعتی امیرکبیر</footer>
+        {# خروج در جنگو با POST انجام می‌شود، نه با یک لینک ساده #}
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="icon-btn" type="submit" title="خروج" aria-label="خروج">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 4H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M12 6.5 8.5 10l3.5 3.5M8.5 10H17"/></svg></button></form>
+      </div>
+    </details>
+  </aside>
+  {# در صفحه‌ی باریک منو بسته شروع می‌شود؛ بدون جاوااسکریپت باز می‌ماند و همچنان قابل‌استفاده است #}
+  <script>if (window.matchMedia("(max-width: 860px)").matches) { document.querySelector(".nav-drawer").removeAttribute("open"); }</script>
+  {% endif %}
+  <div class="shell">
+    <main id="content" class="{% block main_class %}{% endblock %}">
+      {% if messages %}<div role="status" aria-live="polite">
+        {% for message in messages %}<div class="msg {{ message.tags }}">{{ message }}</div>{% endfor %}
+      </div>{% endif %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="site-footer">پروژه‌ی کارشناسی — دانشگاه صنعتی امیرکبیر</footer>
+  </div>
+  {% block panel %}{% endblock %}
   {% assistant_widget %}
 </body>
 </html>

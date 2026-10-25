@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import (CaseEvent, Deadline, Department, DocumentVersion, ProjectCase,
-                     RefereeAssignment, Review, User)
+from .models import (CaseEvent, Deadline, Department, DocumentComment, DocumentVersion, ProjectCase,
+                     RefereeAssignment, Review, Signature, User)
 
 
 @admin.register(User)
@@ -50,7 +50,7 @@ class EventInline(admin.TabularInline):
 
 @admin.register(ProjectCase)
 class ProjectCaseAdmin(admin.ModelAdmin):
-    list_display = ("title_fa", "author", "advisor", "state", "academic_year", "semester")
+    list_display = ("title_fa", "author", "advisor", "co_advisor", "state", "academic_year", "semester")
     list_filter = ("state", "semester", "department")
     search_fields = ("title_fa", "title_en", "author__username", "author__last_name")
     inlines = [RefereeInline, VersionInline, DeadlineInline, EventInline]
@@ -58,3 +58,5 @@ class ProjectCaseAdmin(admin.ModelAdmin):
 
 admin.site.register(Department)
 admin.site.register(Review)
+admin.site.register(DocumentComment)
+admin.site.register(Signature)

@@ -2,14 +2,14 @@
 <div class="table-wrap stacked">
 <table>
   <thead>
-    <tr><th>عنوان پروژه</th><th>نویسنده</th><th>نقش شما</th><th>وضعیت</th><th>اقدام شما</th><th>نزدیک‌ترین مهلت</th></tr>
+    <tr><th>عنوان پروژه</th><th>نویسنده</th>{% if not hide_roles %}<th>نقش شما</th>{% endif %}<th>وضعیت</th><th>اقدام شما</th><th>نزدیک‌ترین مهلت</th></tr>
   </thead>
   <tbody>
   {% for row in rows %}
     <tr>
-      <td><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td data-label="عنوان پروژه"><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
       <td data-label="نویسنده">{{ row.case.author }}</td>
-      <td data-label="نقش شما"><span>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</span></td>
+      {% if not hide_roles %}<td data-label="نقش شما"><span>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</span></td>{% endif %}
       <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=row.case %}</td>
       <td data-label="اقدام شما"><span>{% for offer in row.todo %}{{ offer.transition.label }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</span></td>
       <td data-label="نزدیک‌ترین مهلت">

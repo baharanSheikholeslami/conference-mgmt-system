@@ -1,25 +1,24 @@
 {% extends "workflow/base.html" %}
-{% load portal agent_tags %}
+{% load static portal agent_tags %}
 {% block title %}{{ case.title_fa }}{% endblock %}
+{% block body_class %}{% if panel %}panel-open{% endif %}{% endblock %}
 {% block content %}
-<a class="crumb" href="{% url 'dashboard' %}">→ بازگشت به داشبورد</a>
+<a class="crumb" href="{% url 'dashboard' %}">بازگشت به داشبورد</a>
 
-<section class="card case-hero">
-  <div class="page-head">
-    <div>
-      <h1>{{ case.title_fa }}</h1>
-      {% if case.title_en %}<div class="muted ltr sub">{{ case.title_en }}</div>{% endif %}
-    </div>
+<header class="case-hero">
+  <div class="case-hero-top">
     {% include "workflow/_state_badge.html" %}
+    {% if can_edit %}<a class="btn ghost compact" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
+    <span class="roles">{% for role in roles %}<span class="role-chip">{{ role }}</span>{% empty %}<span class="role-chip">فقط مشاهده</span>{% endfor %}</span>
   </div>
-  {% if stage %}
-    <div class="progress" role="progressbar" aria-label="پیشرفت پرونده" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress }}"><span style="width: {{ progress }}%"></span></div>
-    <div class="progress-label"><span>مرحله‌ی {{ stage|fa }} از {{ stage_count|fa }}</span><span>{{ progress|fa }}٪</span></div>
+  <h1>{{ case.title_fa }}</h1>
+  {% if case.title_en %}<p class="title-en ltr">{{ case.title_en }}</p>{% endif %}
+  {% if phases %}
+  <ol class="phases" aria-label="مرحله‌ی پروژه">
+    {% for p in phases %}<li class="{{ p.status }}"{% if p.status == "current" %} aria-current="step"{% endif %}><span>{{ p.label }}</span></li>{% endfor %}
+  </ol>
   {% endif %}
-  <div class="roles"><span>نقش شما در این پرونده:</span>
-    {% for role in roles %}<span class="badge plain">{{ role }}</span> {% empty %}<span class="muted">فقط مشاهده</span>{% endfor %}
-  </div>
-</section>
+</header>
 
 {% if feedback %}
 <section class="card feedback" role="alert">
@@ -32,7 +31,7 @@
 </section>
 {% endif %}
 
-{% if offers or upload_kind or can_edit or cancel_offer %}
+{% if offers or cancel_offer %}
 <section class="card todo">
   <h2>اقدام‌های شما</h2>
   <div class="actions">
@@ -41,27 +40,27 @@
         <span class="btn disabled" role="link" aria-disabled="true">{{ offer.transition.label }}</span>
         <span class="why">{{ offer.blocked }}</span>
       {% else %}
-        <a class="btn {{ offer.transition.tone }}" href="{% url 'case_action' case.pk offer.transition.action %}">{{ offer.transition.label }}</a>
+        <a class="btn {{ offer.transition.tone }}" href="{{ offer.url }}">{{ offer.transition.label }}</a>
       {% endif %}
     {% endfor %}
-    {% if upload_kind %}<a class="btn secondary" href="{% url 'document_upload' case.pk %}">بارگذاری {% if upload_kind == "thesis" %}پایان‌نامه{% else %}پیشنهاد{% endif %}</a>{% endif %}
-    {% if can_edit %}<a class="btn ghost" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
     {% if cancel_offer %}<a class="btn reject" href="{% url 'case_action' case.pk 'cancel' %}">{{ cancel_offer.transition.label }}</a>{% endif %}
   </div>
 </section>
 {% endif %}
 
-<section class="card">
-  <h2>مشخصات</h2>
+<section class="section" aria-labelledby="facts-title">
+  <h2 id="facts-title" class="section-title">مشخصات</h2>
   <dl class="facts">
-    <div><dt>نویسنده</dt><dd>{{ case.author }} <small>({{ case.author.get_user_type_display }}{% if case.author.student_number %}، {{ case.author.student_number|fa }}{% endif %})</small></dd></div>
+    <div><dt>دانشجو</dt><dd>{{ case.author }}{% if case.author.user_type == "external" %} <small>(نویسنده غیردانشجو)</small>{% endif %}</dd></div>
+    <div><dt>شماره دانشجویی</dt><dd>{{ case.author.student_number|fa|default:"—" }}</dd></div>
     <div><dt>استاد راهنما</dt><dd>{{ case.advisor|default:"—" }}</dd></div>
-    {% if is_edu %}<div><dt>ایمیل نویسنده</dt><dd class="ltr">{{ case.author.email|default:"—" }}</dd></div>{% endif %}
-    <div><dt>گروه آموزشی</dt><dd>{{ case.department|default:"—" }}</dd></div>
-    <div><dt>نیم‌سال ثبت‌نام</dt><dd>{{ case.get_semester_display }} {{ case.academic_year|fa }}</dd></div>
-    <div><dt>تاریخ ثبت‌نام پروژه</dt><dd>{{ case.registration_date|jalali }}</dd></div>
+    <div><dt>استاد مشاور</dt><dd>{{ case.co_advisor|default:"—" }}</dd></div>
     <div><dt>داور(ان)</dt><dd>{% for a in assignments %}{{ a.referee }}{% if not forloop.last %}، {% endif %}{% empty %}—{% endfor %}</dd></div>
-    {% if case.edu_received_at %}<div><dt>دریافت در آموزش دانشکده</dt><dd>{{ case.edu_received_at|jalali }}</dd></div>{% endif %}
+    <div><dt>گروه آموزشی</dt><dd>{{ case.department|default:"—" }}</dd></div>
+    <div><dt>نیم‌سال</dt><dd>{{ case.get_semester_display }} {{ case.academic_year|fa }}</dd></div>
+    <div><dt>ثبت پروژه</dt><dd>{{ case.registration_date|jalali }}</dd></div>
+    {% if is_edu %}<div><dt>ایمیل دانشجو</dt><dd class="ltr">{{ case.author.email|default:"—" }}</dd></div>{% endif %}
+    {% if case.edu_received_at %}<div><dt>دریافت در آموزش</dt><dd>{{ case.edu_received_at|jalali }}</dd></div>{% endif %}
     {% if case.final_approved_at %}<div><dt>تصویب نهایی</dt><dd>{{ case.final_approved_at|jalali }}</dd></div>{% endif %}
     {% if case.thesis_submitted_at %}<div><dt>تحویل پایان‌نامه</dt><dd>{{ case.thesis_submitted_at|jalali }}</dd></div>{% endif %}
     {% if case.defense_date %}<div><dt>دفاع</dt><dd>{{ case.defense_date|jalali }} — {{ case.defense_place }}</dd></div>{% endif %}
@@ -69,66 +68,95 @@
   </dl>
 </section>
 
-<section class="card">
-  <h2>اسناد و نظر داوران</h2>
-  {% if versions %}
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>سند</th><th>بارگذاری</th><th>توضیح و نظرات</th><th></th></tr></thead>
-    <tbody>
-    {% for v in versions %}
-      <tr>
-        <td>{{ v.get_kind_display }}<br><small>نسخه‌ی {{ v.number|fa }}</small></td>
-        <td>{{ v.uploaded_at|jalali_datetime }}<br><small>{{ v.uploaded_by }}</small></td>
-        <td>
-          {{ v.note|default:"" }}
-          {% for review in v.reviews.all %}
-            <div class="review">
-              <strong>{{ review.assignment.referee }}</strong>
-              <span class="badge {% if review.decision == 'approve' %}done{% else %}wait{% endif %}">{{ review.get_decision_display }}</span>
-              {% if review.comment %}<p>{{ review.comment }}</p>{% endif %}
-            </div>
-          {% endfor %}
-          {% if v.kind == "proposal" %}{% validation_box v case %}{% endif %}
-        </td>
-        <td><a href="{% url 'document_download' v.pk %}">دانلود</a></td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+<section class="section" aria-labelledby="docs-title">
+  <h2 id="docs-title" class="section-title">اسناد</h2>
+  <div class="doc-grid">
+  {% for box in boxes %}
+    <article class="doc-box{% if not box.latest %} is-empty{% endif %}{% if panel and panel.version == box.latest %} is-open{% endif %}">
+      <header class="doc-box-head">
+        <span class="doc-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M6 2.5h5.5L15.5 6.5V16a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 16V4A1.5 1.5 0 0 1 6 2.5zM11 2.5V7h4.5M7.5 10.5h5M7.5 13.5h5"/></svg></span>
+        <div>
+          <h3>{{ box.label }}</h3>
+          {% if box.latest %}<small>نسخه‌ی {{ box.latest.number|fa }} — {{ box.latest.uploaded_at|jalali_datetime }}</small>
+          {% else %}<small>هنوز بارگذاری نشده است</small>{% endif %}
+        </div>
+      </header>
+
+      {% if box.latest %}
+        <a class="doc-open" href="{{ box.url }}">
+          <span>باز کردن سند</span>
+          {% if box.comment_count %}<span class="pill">{{ box.comment_count|fa }} نظر</span>{% endif %}
+          {% for s in box.signatures %}<span class="pill ok">امضای {{ s.signer }}</span>{% endfor %}
+        </a>
+        {% if box.latest.note %}<p class="doc-note">{{ box.latest.note }}</p>{% endif %}
+        {% validation_box box.latest case %}
+        {% if box.decision %}
+          <div class="actions">
+            <a class="btn approve" href="{{ box.url }}&amp;panel=sign">{{ box.decision.approve_label }}</a>
+            <a class="btn return" href="{{ box.url }}&amp;panel=revise">{{ box.decision.revise_label }}</a>
+          </div>
+        {% endif %}
+        {% if box.can_upload or box.submit %}
+          <div class="actions">
+            {% if box.submit %}
+              {% if box.submit.blocked %}<span class="btn disabled" aria-disabled="true">{{ box.submit.transition.label }}</span><span class="why">{{ box.submit.blocked }}</span>
+              {% else %}<a class="btn" href="{% url 'case_action' case.pk box.submit.transition.action %}">{{ box.submit.transition.label }}</a>{% endif %}
+            {% endif %}
+            {% if box.can_upload %}<a class="btn secondary" href="{% url 'document_upload' case.pk %}">بارگذاری نسخه‌ی تازه</a>{% endif %}
+          </div>
+        {% endif %}
+        {% if box.older %}
+          <details class="older">
+            <summary>نسخه‌های پیشین ({{ box.older|length|fa }})</summary>
+            <ul>{% for v in box.older %}<li><a href="{{ request.path }}?doc={{ v.pk }}">نسخه‌ی {{ v.number|fa }}</a> <small>{{ v.uploaded_at|jalali }}</small></li>{% endfor %}</ul>
+          </details>
+        {% endif %}
+      {% else %}
+        <div class="doc-empty">
+          {% if box.can_upload %}
+            <p>فایل {{ box.label }} را بر اساس قالب نمونه آماده و بارگذاری کنید.</p>
+            {% if box.submit.blocked %}<p class="muted">{{ box.submit.blocked }}</p>{% endif %}
+          {% elif box.is_author and box.kind == "thesis" %}
+            <p>بارگذاری پایان‌نامه پس از تصویب پیشنهاد باز می‌شود. قالب نمونه را از همین حالا ببینید.</p>
+          {% elif box.is_author %}
+            <p>بارگذاری پیشنهاد پس از پذیرش استاد راهنما باز می‌شود.</p>
+          {% else %}
+            <p>دانشجو هنوز این سند را بارگذاری نکرده است.</p>
+          {% endif %}
+          <div class="actions">
+            {% if box.can_upload %}<a class="btn" href="{% url 'document_upload' case.pk %}">بارگذاری {{ box.label }}</a>{% endif %}
+            <a class="btn secondary" href="{% static box.template %}" download>دریافت قالب نمونه</a>
+          </div>
+        </div>
+      {% endif %}
+    </article>
+  {% endfor %}
   </div>
-  {% else %}<p class="empty">هنوز سندی بارگذاری نشده است.</p>{% endif %}
 </section>
 
-<section class="card">
-  <h2>مهلت‌ها</h2>
+<div class="grid-2">
+<section class="section" aria-labelledby="deadlines-title">
+  <h2 id="deadlines-title" class="section-title">مهلت‌ها</h2>
   {% if deadlines %}
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>مهلت</th><th>تاریخ</th><th>تایمر</th><th>وضعیت</th></tr></thead>
-    <tbody>
+  <ul class="deadline-list">
     {% for d in deadlines %}
-      <tr>
-        <td>{{ d.get_kind_display }}</td>
-        <td>{{ d.due_date|jalali }}</td>
-        <td>{% if d.satisfied_at or case.is_terminal %}—{% elif d.is_lower_bound %}<span class="timer plain">{{ d.due_date|time_left }}</span>{% else %}<span class="timer {{ d.due_date|time_left_class }}">{{ d.due_date|time_left }}</span>{% endif %}</td>
-        <td>
+      <li>
+        <div><strong>{{ d.get_kind_display }}</strong><small>{{ d.due_date|jalali }}</small></div>
+        <div>
           {% if d.is_lower_bound %}<span class="badge plain">دفاع پیش از این تاریخ مجاز نیست</span>
           {% elif d.satisfied_at %}<span class="badge done">انجام شد در {{ d.satisfied_at|jalali }}{% if d.satisfied_at > d.due_date %} (با تأخیر){% endif %}</span>
           {% elif case.is_terminal %}<span class="badge plain">—</span>
-          {% elif d.is_overdue %}<span class="badge stopped">گذشته</span>
-          {% else %}<span class="badge wait">در جریان</span>{% endif %}
-        </td>
-      </tr>
+          {% elif d.is_overdue %}<span class="badge stopped">گذشته</span> <span class="timer danger">{{ d.due_date|time_left }}</span>
+          {% else %}<span class="timer {{ d.due_date|time_left_class }}">{{ d.due_date|time_left }}</span>{% endif %}
+        </div>
+      </li>
     {% endfor %}
-    </tbody>
-  </table>
-  </div>
+  </ul>
   {% else %}<p class="empty">مهلتی ثبت نشده است.</p>{% endif %}
 </section>
 
-<section class="card">
-  <h2>تاریخچه‌ی پرونده</h2>
+<section class="section" aria-labelledby="history-title">
+  <h2 id="history-title" class="section-title">تاریخچه‌ی پرونده</h2>
   <ol class="timeline">
   {% for e in events %}
     <li>
@@ -138,9 +166,13 @@
       <br><small>{{ e.actor|default:"سامانه" }} — {{ e.created_at|jalali_datetime }}</small>
       {% if e.note %}<p class="note">{{ e.note }}</p>{% endif %}
     </li>
+  {% empty %}<li class="muted">رویدادی ثبت نشده است.</li>
   {% endfor %}
   </ol>
 </section>
+</div>
 
 {% notifications_card case %}
 {% endblock %}
+
+{% block panel %}{% if panel %}{% include "workflow/_doc_panel.html" %}{% endif %}{% endblock %}

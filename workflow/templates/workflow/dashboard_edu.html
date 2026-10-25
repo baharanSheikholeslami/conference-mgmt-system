@@ -1,0 +1,62 @@
+{% extends "workflow/base.html" %}
+{% load portal %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<header class="greeting with-action">
+  <div>
+    <h1>سلام، {{ user.first_name|default:user }}</h1>
+    <p class="muted">{% if pending %}{{ pending|length|fa }} پرونده منتظر اقدام آموزش است.{% else %}کاری منتظر آموزش نیست.{% endif %}</p>
+  </div>
+  <a class="btn secondary" href="{% url 'project_list' %}">فهرست همه‌ی پروژه‌ها</a>
+</header>
+
+<div class="kpis">
+  <div class="kpi{% if pending %} hot{% endif %}"><strong>{{ pending|length|fa }}</strong><span>منتظر اقدام آموزش</span></div>
+  <div class="kpi"><strong>{{ totals.active|fa }}</strong><span>پروژه‌ی جاری</span></div>
+  <div class="kpi{% if overdue %} warn{% endif %}"><strong>{{ overdue|length|fa }}</strong><span>مهلت گذشته</span></div>
+  <div class="kpi"><strong>{{ totals.completed|fa }}</strong><span>تکمیل‌شده</span></div>
+</div>
+
+<section class="card todo">
+  <div class="card-head"><h2>کارهای آموزش</h2>{% if pending %}<span class="count">{{ pending|length|fa }}</span>{% endif %}</div>
+  {% if pending %}{% include "workflow/_case_table.html" with rows=pending hide_roles=True %}
+  {% else %}<p class="empty">در حال حاضر هیچ پرونده‌ای منتظر اقدام شما نیست.</p>{% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="section" aria-labelledby="pipeline-title">
+    <h2 id="pipeline-title" class="section-title">پروژه‌ها در هر مرحله</h2>
+    <ul class="pipeline">
+    {% for p in phase_rows %}
+      <li>
+        <div class="pipeline-row"><span>{{ p.label }}</span><strong>{{ p.count|fa }}</strong></div>
+        <div class="bar" aria-hidden="true"><span style="width: {{ p.width }}%"></span></div>
+        {% if p.states %}<div class="pipeline-states">{% for st, n in p.states %}<a href="{% url 'project_list' %}?state={{ st.value }}">{{ st.label }} ({{ n|fa }})</a>{% endfor %}</div>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+
+  <section class="section" aria-labelledby="overdue-title">
+    <h2 id="overdue-title" class="section-title">مهلت‌های گذشته</h2>
+    {% if overdue %}
+      <ul class="deadline-list">
+      {% for d in overdue %}
+        <li>
+          <div><a href="{% url 'case_detail' d.case.pk %}"><strong>{{ d.case.author }}</strong></a><small>{{ d.get_kind_display }} — {{ d.due_date|jalali }}</small></div>
+          <span class="timer danger">{{ d.due_date|time_left }}</span>
+        </li>
+      {% endfor %}
+      </ul>
+    {% else %}<p class="empty">هیچ مهلتی عقب نیفتاده است.</p>{% endif %}
+  </section>
+</div>
+
+{% if others %}
+<section class="section" aria-labelledby="others-title">
+  <div class="section-head"><h2 id="others-title" class="section-title">سایر پرونده‌ها</h2><span class="count">{{ others|length|fa }}</span></div>
+  {% include "workflow/_people_table.html" with rows=others|slice:":12" person="referee" %}
+  {% if others|length > 12 %}<p><a href="{% url 'project_list' %}">دیدن همه‌ی {{ others|length|fa }} پرونده</a></p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

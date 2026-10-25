@@ -1,5 +1,7 @@
 from datetime import timedelta
+from pathlib import Path
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -98,6 +100,20 @@ FULL_STUDENTS = [
 ]
 
 
+SAMPLES = Path(settings.BASE_DIR) / "docs" / "samples"
+
+
+def sample_doc(kind="proposal"):
+    """
+    سند نمونه‌ی خوانا (همان فایل‌های docs/samples)، تا نمایشگر سند بخش‌ها را نشان دهد و استاد
+    بتواند روی آن‌ها نظر بگذارد. اگر فایل نمونه نباشد، یک PDF خالی برمی‌گردد.
+    """
+    path = SAMPLES / f"{kind}-sara-nouri.docx"
+    if not path.exists():
+        return sample_pdf(f"sample-{kind}.pdf")
+    return ContentFile(path.read_bytes(), name=f"sample-{kind}.docx")
+
+
 def sample_pdf(name="sample-proposal.pdf"):
     """یک PDF یک‌صفحه‌ای خالی و معتبر، تا پرونده‌های نمونه سندی برای داوری و دانلود داشته باشند."""
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -159,7 +175,7 @@ class Command(BaseCommand):
 
         if not case2.versions.exists():
             DocumentVersion.objects.create(case=case2, kind=DocKind.PROPOSAL, number=1,
-                                           file=sample_pdf(), note="فایل نمونه",
+                                           file=sample_doc(), note="فایل نمونه",
                                            uploaded_by=users["external1"])
 
         for c in (case1, case2):
@@ -174,6 +190,9 @@ class Command(BaseCommand):
                 title_fa=fa, title_en=en, advisor=users[ADVISORS[alias]])
         if options["full"]:
             self.seed_cases_in_every_state(users, dept, today)
+        # استاد مشاور فقط نمایشی است؛ برای چند پرونده ثبت می‌شود تا در صفحه‌ها دیده شود
+        ProjectCase.objects.filter(author__username__in=["amir.hosseini", "alireza.niknam", "fatemeh.mousavi"],
+                                   co_advisor__isnull=True).update(co_advisor=users["referee2"])
 
         self.stdout.write(self.style.SUCCESS("داده‌ی نمونه آماده است (رمز همه‌ی کاربران: test1234)."))
 
@@ -206,12 +225,12 @@ class Command(BaseCommand):
         assignment = RefereeAssignment.objects.create(case=case, referee=users["referee1"],
                                                       assigned_by=users["head1"])
         proposal = DocumentVersion.objects.create(case=case, kind=DocKind.PROPOSAL, number=1,
-                                                  file=sample_pdf(), note="فایل نمونه",
+                                                  file=sample_doc(), note="فایل نمونه",
                                                   uploaded_by=author)
         Review.objects.create(assignment=assignment, version=proposal,
                               decision=ReviewDecision.APPROVE)
         DocumentVersion.objects.create(case=case, kind=DocKind.THESIS, number=1,
-                                       file=sample_pdf("sample-thesis.pdf"), note="فایل نمونه",
+                                       file=sample_doc("thesis"), note="فایل نمونه",
                                        uploaded_by=author)
         case.sync_deadlines()
         for kind, done in ((DeadlineKind.PROPOSAL_SUBMISSION, case.edu_received_at),
@@ -258,7 +277,7 @@ class Command(BaseCommand):
             case.sync_deadlines()
             return
         proposal = DocumentVersion.objects.create(case=case, kind=DocKind.PROPOSAL, number=1,
-                                                  file=sample_pdf(), note="فایل نمونه", uploaded_by=author)
+                                                  file=sample_doc(), note="فایل نمونه", uploaded_by=author)
         order = list(State)
         reached = lambda s: order.index(state) >= order.index(s)     # noqa: E731
         if reached(State.REFEREE_ASSIGNMENT):
@@ -280,7 +299,7 @@ class Command(BaseCommand):
                     comment="لطفاً روش ارزیابی را دقیق‌تر توضیح دهید." if revise else "")
         if reached(State.THESIS_ADVISOR_REVIEW):
             DocumentVersion.objects.create(case=case, kind=DocKind.THESIS, number=1,
-                                           file=sample_pdf("sample-thesis.pdf"), note="فایل نمونه",
+                                           file=sample_doc("thesis"), note="فایل نمونه",
                                            uploaded_by=author)
         self.log_return(case, users)
         case.sync_deadlines()

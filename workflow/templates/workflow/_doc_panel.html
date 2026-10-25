@@ -1,0 +1,118 @@
+{% load portal %}{% with v=panel.version %}
+<aside class="doc-panel" aria-label="نمایشگر سند">
+  <header class="doc-panel-head">
+    <div class="doc-panel-title">
+      <strong>{{ v.get_kind_display }}</strong>
+      <small>نسخه‌ی {{ v.number|fa }} — {{ v.uploaded_by }}، {{ v.uploaded_at|jalali }}</small>
+    </div>
+    <div class="doc-panel-tools">
+      {% if panel.is_pdf and panel.sections %}
+        <nav class="seg" aria-label="شیوه‌ی نمایش">
+          <a href="{{ panel.url }}"{% if not panel.show_file %} aria-current="true"{% endif %}>متن و نظرها</a>
+          <a href="{{ panel.url }}&amp;view=file"{% if panel.show_file %} aria-current="true"{% endif %}>فایل اصلی</a>
+        </nav>
+      {% endif %}
+      <a class="icon-btn" href="{% url 'document_download' v.pk %}" title="دانلود فایل" aria-label="دانلود فایل">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.5h12"/></svg></a>
+      <a class="icon-btn" href="{{ panel.close_url }}" title="بستن" aria-label="بستن نمایشگر">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></a>
+    </div>
+  </header>
+
+  <div class="doc-panel-body">
+    {% if panel.show_file %}
+      <iframe class="doc-frame" src="{% url 'document_inline' v.pk %}" title="{{ v.get_kind_display }}"></iframe>
+    {% elif panel.sections is None %}
+      <p class="empty">پیش‌نمایش متن این فایل ممکن نیست (قالب doc قدیمی یا فایل اسکن‌شده). فایل را دانلود کنید؛ نظر کلی را پایین همین صفحه بنویسید.</p>
+    {% else %}
+      <article class="paper">
+      {% for s in panel.sections %}
+        {% if s.lines or s.index != 1 %}
+        <section class="paper-section{% if s.comments %} has-comments{% endif %}" id="s-{{ s.index }}">
+          {% if s.index != 1 %}<h4>{{ s.title }}</h4>{% endif %}
+          {% for line in s.lines %}<p>{{ line }}</p>{% endfor %}
+          {% for c in s.comments %}
+            <div class="comment"><strong>{{ c.author }}</strong> <small>{{ c.created_at|jalali_datetime }}</small><p>{{ c.text }}</p></div>
+          {% endfor %}
+          {% if panel.can_comment %}
+            <details class="comment-add">
+              <summary>نظر روی این بخش</summary>
+              <form method="post" action="{% url 'document_comment' v.pk %}">{% csrf_token %}
+                <input type="hidden" name="section" value="{{ s.index }}">
+                <input type="hidden" name="section_title" value="{{ s.title }}">
+                <textarea name="text" rows="3" required aria-label="نظر روی {{ s.title }}" placeholder="مثلاً: معیار ارزیابی را کمّی بنویسید."></textarea>
+                <button class="btn compact" type="submit">ثبت نظر</button>
+              </form>
+            </details>
+          {% endif %}
+        </section>
+        {% endif %}
+      {% endfor %}
+        <section class="paper-section signature-area" aria-label="محل امضا">
+          <h4>محل امضا</h4>
+          {% for sig in panel.signatures %}
+            <figure class="signature">
+              <img src="{% url 'signature_image' sig.pk %}" alt="امضای {{ sig.signer }}">
+              <figcaption>{{ sig.get_role_display }}: {{ sig.signer }} — {{ sig.created_at|jalali }}
+                {% if sig.signed_file %}<a href="{% url 'signed_download' sig.pk %}">دانلود نسخه‌ی امضاشده</a>{% endif %}</figcaption>
+            </figure>
+          {% empty %}<p class="muted">هنوز امضایی ثبت نشده است.</p>{% endfor %}
+        </section>
+      </article>
+    {% endif %}
+
+    {% if panel.general or panel.can_comment %}
+    <section class="general-comments" id="s-0">
+      <h4>نظر درباره‌ی کل سند</h4>
+      {% for c in panel.general %}
+        <div class="comment"><strong>{{ c.author }}</strong> <small>{{ c.created_at|jalali_datetime }}</small><p>{{ c.text }}</p></div>
+      {% endfor %}
+      {% if panel.can_comment %}
+        <form method="post" action="{% url 'document_comment' v.pk %}" class="comment-inline">{% csrf_token %}
+          <input type="hidden" name="section" value="0">
+          <textarea name="text" rows="2" required aria-label="نظر درباره‌ی کل سند" placeholder="نظر کلی شما درباره‌ی این سند"></textarea>
+          <button class="btn compact secondary" type="submit">ثبت نظر</button>
+        </form>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  {% if panel.decision %}
+  <footer class="doc-panel-foot">
+    {% if panel.mode == "sign" %}
+      <form method="post" action="{% url 'document_decide' v.pk %}" enctype="multipart/form-data" class="decide-form">{% csrf_token %}
+        <input type="hidden" name="decision" value="approve">
+        <h4>تأیید و امضای الکترونیک</h4>
+        <p class="muted">تصویر امضای خود را بارگذاری کنید. امضا در «محل امضا»ی سند قرار می‌گیرد و نسخه‌ی امضاشده ذخیره می‌شود.</p>
+        <label class="drop">
+          <input type="file" name="signature" accept=".png,.jpg,.jpeg" required>
+          <span>PNG یا JPG، حداکثر {{ panel.max_signature_mb|fa }} مگابایت؛ ترجیحاً با زمینه‌ی سفید یا شفاف</span>
+        </label>
+        <textarea name="note" rows="2" aria-label="توضیح (اختیاری)" placeholder="توضیح (اختیاری)"></textarea>
+        <div class="actions">
+          <button class="btn approve" type="submit">ثبت تأیید و امضا</button>
+          <a class="btn ghost" href="{{ panel.url }}">انصراف</a>
+        </div>
+      </form>
+    {% elif panel.mode == "revise" %}
+      <form method="post" action="{% url 'document_decide' v.pk %}" class="decide-form">{% csrf_token %}
+        <input type="hidden" name="decision" value="revise">
+        <h4>بازگرداندن برای اصلاح</h4>
+        <p class="muted">{% if panel.comment_total %}نظرهای شما روی بخش‌ها برای دانشجو فرستاده می‌شود؛ اگر لازم است توضیح کلی هم بنویسید.{% else %}بنویسید دانشجو چه چیزی را اصلاح کند، یا پیش از این روی بخش‌های سند نظر بگذارید.{% endif %}</p>
+        <textarea name="note" rows="3" aria-label="توضیح برای دانشجو" placeholder="توضیح برای دانشجو"></textarea>
+        <div class="actions">
+          <button class="btn return" type="submit">بازگرداندن به دانشجو</button>
+          <a class="btn ghost" href="{{ panel.url }}">انصراف</a>
+        </div>
+      </form>
+    {% else %}
+      <div class="actions">
+        <a class="btn approve" href="{{ panel.url }}&amp;panel=sign">{{ panel.decision.approve_label }}</a>
+        <a class="btn return" href="{{ panel.url }}&amp;panel=revise">{{ panel.decision.revise_label }}</a>
+      </div>
+    {% endif %}
+  </footer>
+  {% endif %}
+</aside>
+{% endwith %}

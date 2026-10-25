@@ -65,24 +65,19 @@ def visible_to(user):
 
 def validation_visible_to(user, case, version):
     """
-    بررسی خودکار قالب فقط روی آخرین نسخه‌ی پیشنهاد و فقط در مرحله‌ی تصمیم خواننده دیده می‌شود:
-      • دانشجو: هنگام تدوین/اصلاح، پیش از ارسال پیشنهاد
-      • استاد راهنما: هنگام تأیید پیشنهاد (در انتظار تأیید استاد راهنما)
-      • داور: هنگام داوری
+    نکته‌های بررسی خودکار قالب فقط «هنگام بارگذاری» به کار می‌آیند: فقط نویسنده، فقط روی آخرین نسخه
+    و فقط تا وقتی همان مرحله‌ی بارگذاری (تدوین/اصلاح پیشنهاد، یا اجرای پروژه برای پایان‌نامه) باز است.
+    پس از ارسال سند برای استاد، نکته‌ها دیگر به هیچ‌کس نشان داده نمی‌شود.
     در حالت سایه فقط آموزش دانشکده و مدیر سامانه می‌بینند (visible_to).
     """
     if not visible_to(user):
         return False
     if shadow():
         return True
-    latest = wf.latest_version(case, DocKind.PROPOSAL)
+    latest = wf.latest_version(case, version.kind)
     if latest is None or latest.pk != version.pk:
         return False
-    roles = case.roles_of(user)
-    return bool(
-        (CaseRole.AUTHOR in roles and case.state in (State.DRAFTING, State.REVISION))
-        or (CaseRole.ADVISOR in roles and case.state == State.ADVISOR_REVIEW)
-        or (CaseRole.REFEREE in roles and case.state == State.REFEREE_REVIEW))
+    return user.id == case.author_id and wf.uploadable_kind(case, user) == version.kind
 
 
 def _finish(run, status=None, error="", model=""):
@@ -110,7 +105,7 @@ MAX_DOC_CHARS = 60_000       # سقف متنی که برای n8n فرستاده 
 
 
 def request_validation(version):
-    """بررسی قالب این نسخه‌ی پیشنهاد را از n8n می‌خواهد. نتیجه بعداً با save_validation_result می‌رسد."""
+    """بررسی قالب این نسخه‌ی پیشنهاد یا پایان‌نامه را از n8n می‌خواهد. نتیجه بعداً با save_validation_result می‌رسد."""
     validation = _restart(DocumentValidation, extra={"items": []}, version=version)
     try:
         text = extract.extract_text(version.file)
@@ -123,9 +118,9 @@ def request_validation(version):
     payload = {
         "validation_id": validation.pk,
         "case": {"id": case.pk, "title_fa": case.title_fa, "title_en": case.title_en},
-        "document": {"version": version.number, "chars": len(text),
-                     "truncated": len(text) > MAX_DOC_CHARS, "text": text[:MAX_DOC_CHARS]},
-        "checklist": checklist.ITEMS,
+        "document": {"version": version.number, "kind": version.kind, "kind_label": version.get_kind_display(),
+                     "chars": len(text), "truncated": len(text) > MAX_DOC_CHARS, "text": text[:MAX_DOC_CHARS]},
+        "checklist": checklist.items_for(version.kind),
     }
     try:
         n8n.post("validate-proposal", payload)
@@ -152,7 +147,7 @@ def save_validation_result(validation, data):
 
     found, unverified = by_key("found"), by_key("unverified")
     items = []
-    for item in checklist.ITEMS:
+    for item in checklist.items_for(validation.version.kind):
         hit = found.get(item["key"])
         if hit:
             note = f"شاهد در متن: «{str(hit.get('evidence') or '').strip()[:150]}»"
@@ -605,7 +600,7 @@ def visible_notifications(case, user):
 # ───────────────────────── اتصال به رویدادهای پرونده ─────────────────────────
 
 def _validate_on_upload(event):
-    if event.action == f"upload_{DocKind.PROPOSAL}":
+    if event.action in (f"upload_{DocKind.PROPOSAL}", f"upload_{DocKind.THESIS}"):
         version = DocumentVersion.objects.filter(pk=event.data.get("version_id")).first()
         if version:
             request_validation(version)

@@ -23,8 +23,8 @@ from . import rules
 from . import statemachine as sm
 from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, State, UserType
 from .jalali import fa_digits, to_jalali
-from .models import (CaseEvent, Deadline, DocumentVersion, ProjectCase, RefereeAssignment,
-                     Review, User)
+from .models import (CaseEvent, Deadline, DocumentComment, DocumentVersion, ProjectCase,
+                     RefereeAssignment, Review, Signature, User)
 
 
 # ───────────────────────── خطاها ─────────────────────────
@@ -512,3 +512,112 @@ def upload_document(case, user, kind, file, note=""):
     _log(case, user, f"upload_{kind}", case.state, note,
          {"version": version.number, "version_id": version.pk})
     return version
+
+
+# ───────────────────────── بررسی سند در نمایشگر: نظر روی بخش‌ها، تأیید با امضا، بازگرداندن ─────────────────────────
+
+@dataclass(frozen=True)
+class DocDecision:
+    """دو اقدامی که استاد در نمایشگر یک سند دارد: تأیید (با امضای الکترونیک) و بازگرداندن برای اصلاح."""
+    role: str
+    approve: str
+    revise: str
+    review: bool = False          # داور: هر دو اقدام همان submit_review با رأی متفاوت است
+
+    @property
+    def approve_label(self):
+        return "تأیید و ثبت امضای الکترونیک"
+
+    @property
+    def revise_label(self):
+        return "بازگرداندن برای اصلاح"
+
+
+# (نقش، وضعیت، نوع سند) ← اقدام‌های تأیید و بازگرداندن
+_DOC_DECISIONS = {
+    (CaseRole.ADVISOR, State.ADVISOR_REVIEW, DocKind.PROPOSAL): ("advisor_approve", "advisor_return"),
+    (CaseRole.ADVISOR, State.THESIS_ADVISOR_REVIEW, DocKind.THESIS): ("thesis_approve", "thesis_return"),
+    (CaseRole.REFEREE, State.REFEREE_REVIEW, DocKind.PROPOSAL): ("submit_review", "submit_review"),
+}
+SIGNATURE_EXTENSIONS = ("png", "jpg", "jpeg")
+MAX_SIGNATURE_MB = 2
+
+
+def doc_decision(case, user, version):
+    """اقدام تأیید/بازگرداندنی که این کاربر همین حالا روی این نسخه دارد، یا None."""
+    latest = latest_version(case, version.kind)
+    if latest is None or latest.pk != version.pk:
+        return None
+    for role in case.roles_of(user):
+        actions = _DOC_DECISIONS.get((role, case.state, version.kind))
+        if actions is None:
+            continue
+        offers = {o.transition.action: o for o in available_actions(case, user)}
+        if all(a in offers and not offers[a].blocked for a in actions):
+            return DocDecision(role, *actions, review=actions[0] == "submit_review")
+    return None
+
+
+def can_comment(case, user, version):
+    """استاد راهنما و داوران تا پایان پرونده روی آخرین نسخه‌ی سند نظر می‌گذارند."""
+    if case.is_terminal or not case.roles_of(user) & {CaseRole.ADVISOR, CaseRole.REFEREE}:
+        return False
+    latest = latest_version(case, version.kind)
+    return latest is not None and latest.pk == version.pk
+
+
+def add_comment(case, user, version, text, section=0, section_title=""):
+    text = (text or "").strip()
+    if not can_comment(case, user, version):
+        raise NotAllowed("شما نمی‌توانید روی این نسخه نظر بگذارید.")
+    if not text:
+        raise GuardFailed("متن نظر را بنویسید.")
+    return DocumentComment.objects.create(version=version, author=user, section=section,
+                                          section_title=section_title[:120], text=text)
+
+
+def _comments_note(version, user):
+    """اگر استاد هنگام بازگرداندن توضیحی ننوشت، نظرهایش روی بخش‌ها همان توضیح است."""
+    lines = []
+    for c in version.comments.filter(author=user):
+        lines.append(f"• {c.section_title}: {c.text}" if c.section_title else f"• {c.text}")
+    return "\n".join(lines)
+
+
+def _check_signature(image):
+    if image is None:
+        raise GuardFailed("برای تأیید، تصویر امضای خود را بارگذاری کنید.")
+    extension = image.name.rsplit(".", 1)[-1].lower() if "." in image.name else ""
+    if extension not in SIGNATURE_EXTENSIONS:
+        raise GuardFailed("تصویر امضا باید PNG یا JPG باشد.")
+    if image.size > MAX_SIGNATURE_MB * 1024 * 1024:
+        raise GuardFailed(f"حجم تصویر امضا نباید بیشتر از {fa_digits(MAX_SIGNATURE_MB)} مگابایت باشد.")
+
+
+@transaction.atomic
+def decide_document(case, user, version, approve, note="", signature=None):
+    """
+    تأیید یا بازگرداندن یک سند از نمایشگر. تأیید فقط با تصویر امضا انجام می‌شود: امضا ذخیره و
+    روی محل امضای سند قرار می‌گیرد (signing.py). خروجی: پرونده‌ی به‌روزشده.
+    """
+    decision = doc_decision(case, user, version)
+    if decision is None:
+        raise NotAllowed("در وضعیت فعلی تصمیمی درباره‌ی این سند با شما نیست.")
+    note = (note or "").strip()
+    if approve:
+        _check_signature(signature)
+        action = decision.approve
+    else:
+        note = note or _comments_note(version, user)
+        if not note:
+            raise GuardFailed("برای بازگرداندن، توضیح بنویسید یا روی بخش‌های سند نظر بگذارید.")
+        action = decision.revise
+    payload = {}
+    if decision.review:
+        payload["decision"] = ReviewDecision.APPROVE if approve else ReviewDecision.REVISE
+    case = perform(case, action, user, note=note, **payload)
+    if approve:
+        from .signing import sign_version            # Pillow/reportlab فقط این‌جا لازم است
+        record = Signature.objects.create(version=version, signer=user, role=decision.role, image=signature)
+        sign_version(record)
+    return case
