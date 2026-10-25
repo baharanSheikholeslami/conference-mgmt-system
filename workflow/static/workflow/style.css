@@ -1,4 +1,4 @@
-/* ظاهر پورتال — آرام و گرم، با الهام از claude.ai: زمینه‌ی کرم، متن قهوه‌ای‌سیاه، رنگ اصلی سفالی،
+/* ظاهر پورتال — آرام و گرم، با الهام از claude.ai: زمینه‌ی کرم، متن قهوه‌ای‌سیاه، رنگ اصلی آبی سنگی،
    سطح‌های تخت با خط‌های نازک به‌جای سایه. بدون وابستگی به CDN تا روی شبکه‌ی داخلی هم کار کند.
    همه‌ی فاصله‌ها با ویژگی‌های منطقی (inline-start/end) نوشته شده‌اند تا راست‌به‌چپ درست بماند. */
 /* فونت راوی (نسخه‌ی ارقام فارسی) — همراه پروژه است و از هیچ سرویس بیرونی بارگذاری نمی‌شود */
@@ -18,21 +18,21 @@
   --bg: #faf9f5; --sidebar: #f3f1ea; --surface: #ffffff; --surface-2: #f5f4ee; --card: var(--surface);
   --ink: #1f1e1d; --ink-2: #3d3d3a; --muted: #6b6963; --line: #e5e2d8; --line-strong: #d3cfc2;
   --hover: #ece9df;
-  /* رنگ اصلی سفالی؛ متن سفید روی آن حدود ۴٫۷ به ۱ */
-  --accent: #b4532f; --accent-hover: #9a4426; --accent-strong: #7e3820; --accent-ink: #ffffff;
-  --accent-soft: #f6e9e2; --accent-soft-hover: #f0dccf; --accent-line: #e8c8b8;
+  /* رنگ اصلی آبی سنگی، هم‌خانواده‌ی نشان دانشگاه؛ متن سفید روی آن حدود ۷ به ۱ */
+  --accent: #3a5a8c; --accent-hover: #2f4a75; --accent-strong: #253b5e; --accent-ink: #ffffff;
+  --accent-soft: #e9eef6; --accent-soft-hover: #dde5f1; --accent-line: #c3d0e4;
   /* معنای اقدام‌ها: تأیید = سبز، بازگرداندن برای اصلاح = کهربایی، رد/لغو = قرمز، کار جانبی = سفید با خط */
   --ok: #2d6a4f; --ok-hover: #22543e; --ok-soft: #e7f1ea; --ok-line: #b9d5c3;
   --warn: #8f5410; --warn-hover: #74420a; --warn-soft: #f9eedb; --warn-line: #e8cc9c;
   --danger: #b0372b; --danger-hover: #902a20; --danger-soft: #f8e5e1; --danger-line: #ebbcb4; --neutral-soft: #efede5;
-  --info: #3b5b8c; --info-soft: #e9eef6;
+  --info: var(--accent); --info-soft: var(--accent-soft);
   --ai: #6a52c4; --ai-soft: #f2effa; --ai-line: #dfd8f3;
   /* شکل */
   --radius-sm: 8px; --radius: 12px; --radius-lg: 18px;
   --shadow-1: 0 1px 2px rgba(31, 30, 29, .05);
   --shadow-2: 0 4px 16px rgba(31, 30, 29, .07);
   --shadow-3: 0 16px 48px rgba(31, 30, 29, .14);
-  --focus: 0 0 0 3px rgba(180, 83, 47, .3);
+  --focus: 0 0 0 3px rgba(58, 90, 140, .3);
   --ease: cubic-bezier(.2, .7, .3, 1);
   --sidebar-w: 260px; --panel-w: min(46vw, 680px);
 }
@@ -162,7 +162,7 @@ main.narrow { max-width: 620px; }
 
 /* ───────── دکمه‌ها ─────────
    هر معنا رنگ و نشانه‌ی خودش را دارد تا دو اقدام متفاوت کنار هم با هم اشتباه نشوند:
-   primary (اقدام اصلی، سفالی) · approve (تأیید، سبز) · return (بازگرداندن برای اصلاح، کهربایی)
+   primary (اقدام اصلی، آبی سنگی) · approve (تأیید، سبز) · return (بازگرداندن برای اصلاح، کهربایی)
    reject/danger (رد یا لغو، قرمز) · secondary (کار جانبی، سفید با خط) · ghost (کم‌اهمیت) */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-height: 38px;
@@ -245,7 +245,7 @@ td a.row-title:hover { color: var(--accent); }
 .roles { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
 .role-chip { font-size: .8rem; padding: 0 .65rem; line-height: 1.9; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--ink-2); background: var(--surface); }
 
-/* نوار مرحله‌ها: پنج گام پیوسته؛ گام جاری سفالی */
+/* نوار مرحله‌ها: پنج گام پیوسته؛ گام جاری آبی */
 ol.phases { list-style: none; margin: 1.25rem 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: .35rem; counter-reset: ph; }
 ol.phases li { counter-increment: ph; position: relative; padding-top: .9rem; font-size: .82rem; color: var(--muted); }
 ol.phases li::before { content: ""; position: absolute; inset-inline: 0; top: 0; height: 5px; border-radius: 99px; background: var(--line); }
