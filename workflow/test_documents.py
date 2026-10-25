@@ -1,4 +1,5 @@
 """آزمون‌های صفحه‌ی پرونده‌ی تازه: باکس اسناد، نمایشگر سند، نظر روی بخش‌ها، تأیید با امضا و بازگرداندن."""
+import io
 from pathlib import Path
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -9,6 +10,7 @@ from .enums import DocKind, ReviewDecision, State
 from .models import DocumentComment, Signature
 from .test_portal import PortalTestCase
 from .test_services import pdf, signature_png
+from .views import CONTENT_TYPES
 
 SAMPLES = Path(__file__).resolve().parent.parent / "docs" / "samples"
 
@@ -27,24 +29,46 @@ class DocumentReviewTests(PortalTestCase):
         self.login(user)
         return self.client.get(reverse("case_detail", args=[case.pk]), {"doc": version.pk, **params})
 
-    def test_viewer_splits_the_document_into_sections_with_comment_forms(self):
+    def test_word_file_opens_in_its_own_format_with_a_section_picker(self):
         case = self.advisor_review()
         version = case.versions.get()
         page = self.panel(self.advisor, case, version)
+        inline = reverse("document_inline", args=[version.pk])
+        self.assertContains(page, f'data-src="{inline}"')               # فایل Word با docx-preview نمایش داده می‌شود
+        self.assertContains(page, "docx-preview.min.js")
+        self.assertIn((5, "۴. روش ارزیابی"), page.context["panel"]["section_choices"])
+        self.assertContains(page, "تأیید و ثبت امضای الکترونیک")
+        response = self.client.get(inline)
+        self.assertEqual(response["Content-Type"], CONTENT_TYPES["docx"])
+        self.assertFalse(response.has_header("Content-Disposition") and "attachment" in response["Content-Disposition"])
+        page = self.panel(self.student, case, version)                 # دانشجو فرم نظر ندارد
+        self.assertNotContains(page, 'name="section"')
+        self.assertIsNone(page.context["panel"]["decision"])
+
+    def test_pdf_file_opens_in_a_frame(self):
+        case = self.advisor_review(pdf())
+        version = case.versions.get()
+        page = self.panel(self.advisor, case, version)
+        self.assertContains(page, f'<iframe class="doc-frame" src="{reverse("document_inline", args=[version.pk])}"')
+        self.assertNotContains(page, "docx-preview.min.js")
+
+    def test_text_view_splits_the_document_into_sections_with_comment_forms(self):
+        case = self.advisor_review()
+        version = case.versions.get()
+        page = self.panel(self.advisor, case, version, view="text")
         sections = page.context["panel"]["sections"]
         self.assertIn("۴. روش ارزیابی", [s.title for s in sections])
         self.assertContains(page, "نظر روی این بخش")
-        self.assertContains(page, "تأیید و ثبت امضای الکترونیک")
-        # دانشجو سند را می‌بیند اما نه فرم نظر را و نه دکمه‌ی تأیید را
-        page = self.panel(self.student, case, version)
+        page = self.panel(self.student, case, version, view="text")
         self.assertNotContains(page, "نظر روی این بخش")
-        self.assertIsNone(page.context["panel"]["decision"])
 
     def test_unreadable_file_still_opens_with_a_general_comment_box(self):
         case = self.advisor_review(pdf())
         page = self.panel(self.advisor, case, case.versions.get())
         self.assertIsNone(page.context["panel"]["sections"])
-        self.assertContains(page, "نظر درباره‌ی کل سند")
+        self.assertTrue(page.context["panel"]["show_file"])
+        self.assertEqual(page.context["panel"]["section_choices"], [(0, "کل سند")])
+        self.assertContains(page, 'name="section"')
 
     def test_comment_on_a_section_is_shown_to_the_student(self):
         case = self.advisor_review()
@@ -52,10 +76,16 @@ class DocumentReviewTests(PortalTestCase):
         self.login(self.advisor)
         url = reverse("document_comment", args=[version.pk])
         response = self.client.post(url, {"text": "معیار ارزیابی را کمّی کنید", "section": 5,
-                                          "section_title": "۴. روش ارزیابی"})
-        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}#s-5",
+                                          "section_title": "۴. روش ارزیابی", "view": "text"})
+        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}&view=text#s-5",
                              fetch_redirect_response=False)
         self.assertContains(self.panel(self.student, case, version), "معیار ارزیابی را کمّی کنید")
+        # از نمای «فایل» فقط شماره‌ی بخش می‌آید؛ سرفصل از متن سند خوانده می‌شود
+        self.login(self.advisor)
+        response = self.client.post(url, {"text": "مرجع کم است", "section": 8, "view": "file"})
+        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}#comments",
+                             fetch_redirect_response=False)
+        self.assertEqual(DocumentComment.objects.get(text="مرجع کم است").section_title, "۷. مراجع و منابع")
         self.login(self.student)                                       # دانشجو نظر نمی‌گذارد
         self.assertEqual(self.client.post(url, {"text": "x"}).status_code, 403)
         self.login(self.outsider)
@@ -74,7 +104,9 @@ class DocumentReviewTests(PortalTestCase):
         self.assertEqual(case.state, State.ADVISOR_REVIEW)
 
         response = self.client.post(url, {"decision": "approve", "signature": signature_png()})
-        self.assertRedirects(response, reverse("case_detail", args=[case.pk]))
+        # پس از تأیید، نمایشگر با نسخه‌ی امضاشده باز می‌شود
+        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}",
+                             fetch_redirect_response=False)
         case.refresh_from_db()
         self.assertEqual(case.state, State.EDU_REGISTRATION)
         signature = Signature.objects.get()
@@ -89,6 +121,36 @@ class DocumentReviewTests(PortalTestCase):
                              status, user.username)
             self.assertEqual(self.client.get(reverse("signed_download", args=[signature.pk])).status_code,
                              status, user.username)
+
+    def test_signed_copy_is_shown_and_downloadable_after_approval(self):
+        case = self.advisor_review()
+        version = case.versions.get()
+        inline = reverse("document_inline", args=[version.pk])
+        self.login(self.student)
+        self.assertEqual(self.client.get(inline, {"signed": 1}).status_code, 404)     # هنوز امضا نشده
+        page = self.client.get(reverse("case_detail", args=[case.pk]))
+        self.assertNotContains(page, "دانلود نسخه‌ی امضاشده")
+
+        self.login(self.advisor)
+        self.client.post(reverse("document_decide", args=[version.pk]),
+                         {"decision": "approve", "signature": signature_png()})
+        signature = Signature.objects.get()
+        self.login(self.student)
+        page = self.client.get(reverse("case_detail", args=[case.pk]))
+        self.assertContains(page, reverse("signed_download", args=[signature.pk]))     # در باکس سند
+        self.assertContains(page, "دانلود نسخه‌ی امضاشده")
+        page = self.panel(self.student, case, version)
+        self.assertContains(page, f'data-src="{inline}?signed=1"')                     # نمایشگر نسخه‌ی امضاشده را نشان می‌دهد
+        self.assertContains(page, "دانلود امضاشده")
+        page = self.panel(self.student, case, version, copy="original")
+        self.assertContains(page, f'data-src="{inline}"')
+        response = self.client.get(inline, {"signed": 1})
+        from docx import Document
+        self.assertEqual(len(Document(io.BytesIO(b"".join(response.streaming_content))).inline_shapes), 1)
+        response = self.client.get(reverse("signed_download", args=[signature.pk]))
+        self.assertIn(f"case{case.pk}-proposal-v1-signed.docx", response["Content-Disposition"])
+        self.login(self.outsider)
+        self.assertEqual(self.client.get(inline, {"signed": 1}).status_code, 404)
 
     def test_plain_approve_form_redirects_to_the_signature_panel(self):
         case = self.advisor_review()

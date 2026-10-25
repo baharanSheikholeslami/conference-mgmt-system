@@ -34,7 +34,7 @@
   --shadow-3: 0 16px 48px rgba(31, 30, 29, .14);
   --focus: 0 0 0 3px rgba(58, 90, 140, .3);
   --ease: cubic-bezier(.2, .7, .3, 1);
-  --sidebar-w: 260px; --panel-w: min(46vw, 680px);
+  --sidebar-w: 260px; --panel-w: min(50vw, 760px);
 }
 * { box-sizing: border-box; }
 button, input, select, textarea { font-family: inherit; }
@@ -280,6 +280,10 @@ dl.facts dd { margin: 0; font-weight: 500; }
 .doc-open > span:first-child::after { content: " ←"; color: var(--muted); }
 .doc-open:hover { border-color: var(--line-strong); background: var(--hover); color: var(--ink); text-decoration: none; }
 .doc-note { color: var(--ink-2); font-size: .9rem; margin: 0; }
+.doc-files { display: flex; flex-wrap: wrap; gap: .35rem 1.1rem; font-size: .88rem; }
+.doc-files a { display: inline-flex; align-items: center; gap: .3rem; }
+.doc-files a svg { width: 16px; height: 16px; }
+.doc-files a.signed { color: var(--ok); font-weight: 500; }
 .doc-empty p { margin: 0 0 .75rem; color: var(--ink-2); font-size: .92rem; }
 details.older summary { font-size: .85rem; color: var(--muted); }
 details.older ul { margin: .35rem 0 0; padding-inline-start: 1.2rem; font-size: .88rem; }
@@ -328,11 +332,11 @@ ol.timeline .note { margin: .3rem 0 0; white-space: pre-line; color: var(--ink-2
 .doc-panel-title small { font-size: .78rem; }
 .doc-panel-tools { display: flex; align-items: center; gap: .25rem; }
 .seg { display: inline-flex; background: var(--neutral-soft); border-radius: var(--radius-sm); padding: 2px; margin-inline-end: .35rem; }
-.seg a { padding: .15rem .7rem; border-radius: 6px; color: var(--ink-2); font-size: .82rem; }
+.seg a { white-space: nowrap; padding: .15rem .7rem; border-radius: 6px; color: var(--ink-2); font-size: .82rem; }
 .seg a:hover { text-decoration: none; color: var(--ink); }
 .seg a[aria-current] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-1); }
 .doc-panel-body { flex: 1; overflow-y: auto; padding: 1.5rem 1.75rem; background: var(--surface-2); }
-.doc-frame { width: 100%; height: 100%; min-height: 70vh; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; }
+.doc-frame { display: block; width: 100%; height: 78vh; min-height: 420px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #fff; }
 .paper { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 2rem 2.2rem; box-shadow: var(--shadow-1); line-height: 2; font-size: .95rem; }
 .paper-section { position: relative; padding: .35rem .6rem; margin: 0 -.6rem .5rem; border-radius: var(--radius-sm); scroll-margin-top: 1rem; }
 .paper-section:hover { background: #fcfbf7; }
@@ -539,3 +543,16 @@ body.auth-page {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* نمایش فایل با همان قالب اصلی: PDF در iframe و Word با docx-preview */
+.copy-switch { margin: 0 0 .75rem; }
+.doc-panel-tools .btn.compact { white-space: nowrap; }
+.docx-view { background: var(--neutral-soft); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow-x: auto; min-height: 240px; }
+.docx-view .docx-status { padding: 1.25rem; margin: 0; }
+.docx-view .docx-wrapper { background: transparent; padding: 12px; align-items: center; }
+.docx-view .docx-wrapper > section.docx { box-shadow: var(--shadow-2); margin-bottom: 12px; }
+.comments-block { margin-top: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; }
+.comments-block h4 { margin: 0 0 .5rem; display: flex; align-items: center; gap: .4rem; }
+.comments-block .comment .pill { font-size: .72rem; }
+.section-pick { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); width: 100%; }
+.section-pick select { flex: 1; min-width: 0; font: inherit; color: var(--ink); padding: .35rem .5rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }

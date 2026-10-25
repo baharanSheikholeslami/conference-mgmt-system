@@ -281,6 +281,8 @@ def _doc_boxes(case, user, offers, versions):
             "template": TEMPLATES[kind], "can_upload": upload_kind == kind, "submit": submit,
             "is_author": user.id == case.author_id,
             "signatures": list(latest.signatures.select_related("signer")) if latest else [],
+            "signed": _signed_copy(latest) if latest else None,
+            "format": _extension(latest.file.name).upper() if latest else "",
             "comment_count": latest.comments.count() if latest else 0,
             "decision": services.doc_decision(case, user, latest) if latest else None,
             "url": _panel_url(case, latest) if latest else "",
@@ -303,12 +305,21 @@ def _panel(request, case, versions):
     general = viewer.with_comments(parts, comments)
     decision = services.doc_decision(case, user, version)
     mode = request.GET.get("panel", "")
-    is_pdf = version.file.name.lower().endswith(".pdf")
+    fmt = _extension(version.file.name)
+    viewable = fmt in VIEWABLE
+    signed = _signed_copy(version)
+    show_signed = signed is not None and request.GET.get("copy") != "original"
+    file_url = reverse("document_inline", args=[version.pk]) + ("?signed=1" if show_signed else "")
+    # نظر روی بخش: فهرست سرفصل‌های سند برای انتخاب در نمای «فایل»
+    choices = [(0, "کل سند")] + [(p.index, p.title) for p in parts or [] if p.lines or p.index != 1]
     return {
         "version": version, "sections": parts, "general": general, "comment_total": len(comments),
+        "comments": comments, "section_choices": choices,
         "can_comment": services.can_comment(case, user, version),
         "decision": decision, "mode": mode if decision and mode in ("sign", "revise") else "",
-        "is_pdf": is_pdf, "show_file": is_pdf and (request.GET.get("view") == "file" or parts is None),
+        "format": fmt, "viewable": viewable,
+        "show_file": viewable and (request.GET.get("view") != "text" or parts is None),
+        "signed": signed, "show_signed": show_signed, "file_url": file_url,
         "signatures": list(version.signatures.select_related("signer")),
         "url": _panel_url(case, version),
         "close_url": reverse("case_detail", args=[case.pk]),
@@ -479,14 +490,18 @@ def document_comment(request, pk):
         section = max(int(request.POST.get("section", 0)), 0)
     except ValueError:
         section = 0
+    title = request.POST.get("section_title", "")
+    if section and not title:
+        # در نمای «فایل» فقط شماره‌ی بخش از فهرست انتخاب می‌شود؛ سرفصل از متن سند خوانده می‌شود
+        title = next((p.title for p in viewer.sections(version) or [] if p.index == section), "")
     try:
-        services.add_comment(case, request.user, version, request.POST.get("text", ""), section,
-                             request.POST.get("section_title", ""))
+        services.add_comment(case, request.user, version, request.POST.get("text", ""), section, title)
     except services.NotAllowed:
         raise PermissionDenied from None
     except services.WorkflowError as e:
         messages.error(request, str(e))
-    return redirect(f"{_panel_url(case, version)}#s-{section}")
+    view = "&view=text" if request.POST.get("view") == "text" else ""
+    return redirect(f"{_panel_url(case, version)}{view}#{'s-' + str(section) if view else 'comments'}")
 
 
 @login_required
@@ -502,8 +517,11 @@ def document_decide(request, pk):
     except services.WorkflowError as e:
         messages.error(request, str(e))
         return redirect(_panel_url(case, version, "sign" if approve else "revise"))
-    messages.success(request, f"{version.get_kind_display()} تأیید و امضای شما روی سند ثبت شد." if approve
-                     else f"{version.get_kind_display()} برای اصلاح به دانشجو برگشت.")
+    if approve:
+        # پس از تأیید، نسخه‌ی امضاشده در نمایشگر باز می‌شود تا استاد امضای خود را روی سند ببیند
+        messages.success(request, f"{version.get_kind_display()} تأیید و امضای شما روی سند ثبت شد.")
+        return redirect(_panel_url(case, version))
+    messages.success(request, f"{version.get_kind_display()} برای اصلاح به دانشجو برگشت.")
     return redirect("case_detail", pk=case.pk)
 
 
@@ -511,8 +529,21 @@ CONTENT_TYPES = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpe
                  "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 
 
+# قالب‌هایی که نمایشگر می‌تواند با همان شکل اصلی نشان دهد (PDF در iframe، Word با docx-preview)
+VIEWABLE = ("pdf", "docx")
+
+
+def _extension(name):
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
+def _signed_copy(version):
+    """آخرین فایل امضاشده‌ی این نسخه (همه‌ی امضاها روی آن جمع شده‌اند)، یا None."""
+    return version.signatures.exclude(signed_file="").order_by("-created_at").first()
+
+
 def _inline(field, filename=None):
-    extension = field.name.rsplit(".", 1)[-1].lower()
+    extension = _extension(field.name)
     response = FileResponse(field.open("rb"), filename=filename, as_attachment=filename is not None,
                             content_type=CONTENT_TYPES.get(extension, "application/octet-stream"))
     response["X-Content-Type-Options"] = "nosniff"
@@ -523,11 +554,17 @@ def _inline(field, filename=None):
 @require_GET
 @xframe_options_sameorigin
 def document_inline(request, pk):
-    """فایل PDF برای نمایش درون نمایشگر (iframe)، با همان کنترل دسترسی دانلود."""
+    """فایل PDF یا Word برای نمایش درون نمایشگر، با همان کنترل دسترسی دانلود؛ ?signed=1 نسخه‌ی امضاشده را می‌دهد."""
     _, version = _visible_version(request.user, pk)
-    if not version.file.name.lower().endswith(".pdf"):
+    field = version.file
+    if request.GET.get("signed"):
+        signed = _signed_copy(version)
+        if signed is None:
+            raise Http404
+        field = signed.signed_file
+    if _extension(field.name) not in VIEWABLE:
         raise Http404
-    return _inline(version.file)
+    return _inline(field)
 
 
 def _visible_signature(user, pk):
@@ -548,4 +585,6 @@ def signed_download(request, pk):
     signature = _visible_signature(request.user, pk)
     if not signature.signed_file:
         raise Http404
-    return _inline(signature.signed_file, filename=signature.signed_file.name.rsplit("/", 1)[-1])
+    version = signature.version
+    return _inline(signature.signed_file, filename=(
+        f"case{version.case_id}-{version.kind}-v{version.number}-signed.{_extension(signature.signed_file.name)}"))

@@ -327,7 +327,7 @@ class GuideScenarioTests(TestCase):
         version = services.latest_version(case, kind)
         response = self.client.post(reverse("document_decide", args=[version.pk]),
                                     {"decision": "approve", "signature": signature_png()})
-        self.assertRedirects(response, reverse("case_detail", args=[case.pk]))
+        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}")
         self.assertTrue(version.signatures.get().signed_file)      # امضا روی سند docx نشسته است
 
     def upload(self, username, case, filename):

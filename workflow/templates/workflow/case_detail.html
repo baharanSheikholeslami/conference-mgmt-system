@@ -88,6 +88,10 @@
           {% if box.comment_count %}<span class="pill">{{ box.comment_count|fa }} نظر</span>{% endif %}
           {% for s in box.signatures %}<span class="pill ok">امضای {{ s.signer }}</span>{% endfor %}
         </a>
+        <div class="doc-files">
+          <a href="{% url 'document_download' box.latest.pk %}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.5h12"/></svg>دانلود فایل {{ box.format }}</a>
+          {% if box.signed %}<a class="signed" href="{% url 'signed_download' box.signed.pk %}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.5h12"/></svg>دانلود نسخه‌ی امضاشده</a>{% endif %}
+        </div>
         {% if box.latest.note %}<p class="doc-note">{{ box.latest.note }}</p>{% endif %}
         {% validation_box box.latest case %}
         {% if box.decision %}

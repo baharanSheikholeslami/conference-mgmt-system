@@ -1,3 +1,5 @@
+import io
+import random
 from datetime import timedelta
 from pathlib import Path
 
@@ -8,10 +10,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from workflow import rules
-from workflow.enums import (DeadlineKind, DocKind, ReviewDecision, Semester, State,
+from workflow.enums import (CaseRole, DeadlineKind, DocKind, ReviewDecision, Semester, State,
                             UserType)
 from workflow.models import (CaseEvent, Department, DocumentVersion, ProjectCase,
-                             RefereeAssignment, Review, User)
+                             RefereeAssignment, Review, Signature, User)
+from workflow.signing import sign_version
 
 PASSWORD = "test1234"
 
@@ -114,6 +117,45 @@ def sample_doc(kind="proposal"):
     return ContentFile(path.read_bytes(), name=f"sample-{kind}.docx")
 
 
+def signature_png(user):
+    """تصویر امضای نمونه (یک خط دست‌نویس ساده و ثابت برای هر کاربر) با زمینه‌ی شفاف."""
+    from PIL import Image, ImageDraw
+    rng = random.Random(user.username)
+    image = Image.new("RGBA", (360, 120), (255, 255, 255, 0))
+    points = [(20 + i * 40, 60 + rng.randint(-35, 35)) for i in range(9)]
+    ImageDraw.Draw(image).line(points + [(340, 95), (60, 100)], fill=(25, 45, 110, 255), width=5, joint="curve")
+    out = io.BytesIO()
+    image.save(out, "PNG")
+    return ContentFile(out.getvalue(), name=f"signature-{user.username}.png")
+
+
+def sign_demo(version, signer, role):
+    """امضای استاد روی سندی که در داده‌ی نمونه «تأییدشده» فرض شده، تا نسخه‌ی امضاشده هم دیده شود."""
+    if version is None or signer is None or version.signatures.filter(signer=signer).exists():
+        return
+    sign_version(Signature.objects.create(version=version, signer=signer, role=role, image=signature_png(signer)))
+
+
+def sign_seeded(case):
+    """
+    پرونده‌هایی که از تأیید پیشنهاد یا پایان‌نامه گذشته‌اند، مثل مسیر واقعی، نسخه‌ی امضاشده دارند:
+    پیشنهاد با امضای استاد راهنما (و پس از داوری، داوران) و پایان‌نامه‌ی تحویل‌شده با امضای استاد راهنما.
+    """
+    if case.state in (State.REJECTED, State.CANCELLED):
+        return
+    order = list(State)
+    reached = lambda s: order.index(case.state) >= order.index(s)     # noqa: E731
+    latest = lambda kind: case.versions.filter(kind=kind).order_by("-number").first()     # noqa: E731
+    proposal = latest(DocKind.PROPOSAL)
+    if reached(State.EDU_REGISTRATION):
+        sign_demo(proposal, case.advisor, CaseRole.ADVISOR)
+    if reached(State.COUNCIL_APPROVAL):
+        for assignment in case.referee_assignments.select_related("referee"):
+            sign_demo(proposal, assignment.referee, CaseRole.REFEREE)
+    if reached(State.THESIS_SUBMITTED):
+        sign_demo(latest(DocKind.THESIS), case.advisor, CaseRole.ADVISOR)
+
+
 def sample_pdf(name="sample-proposal.pdf"):
     """یک PDF یک‌صفحه‌ای خالی و معتبر، تا پرونده‌های نمونه سندی برای داوری و دانلود داشته باشند."""
     objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -193,6 +235,8 @@ class Command(BaseCommand):
         # استاد مشاور فقط نمایشی است؛ برای چند پرونده ثبت می‌شود تا در صفحه‌ها دیده شود
         ProjectCase.objects.filter(author__username__in=["amir.hosseini", "alireza.niknam", "fatemeh.mousavi"],
                                    co_advisor__isnull=True).update(co_advisor=users["referee2"])
+        for case in ProjectCase.objects.select_related("advisor"):
+            sign_seeded(case)
 
         self.stdout.write(self.style.SUCCESS("داده‌ی نمونه آماده است (رمز همه‌ی کاربران: test1234)."))
 
