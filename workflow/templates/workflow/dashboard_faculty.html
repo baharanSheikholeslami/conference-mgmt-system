@@ -1,0 +1,68 @@
+{% extends "workflow/base.html" %}
+{% load portal %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<header class="greeting">
+  <h1>سلام، {{ user.first_name|default:user }}</h1>
+  <p class="muted">{% if reminders %}{{ reminders|length|fa }} پرونده منتظر بررسی شماست.{% else %}کاری منتظر شما نیست.{% endif %}</p>
+</header>
+
+{% if reminders %}{% include "workflow/_reminders.html" %}{% endif %}
+{% if head_pending %}
+<section class="card todo" aria-labelledby="assign-title">
+  <div class="card-head"><h2 id="assign-title">منتظر تعیین داور در گروه {{ user.department }}</h2><span class="count">{{ head_pending|length|fa }}</span></div>
+  {% include "workflow/_case_table.html" with rows=head_pending hide_roles=True %}
+</section>
+{% endif %}
+
+<div class="people-grid">
+  <section class="people-box" aria-labelledby="advisees-title">
+    <div class="people-head">
+      <h2 id="advisees-title">دانشجویانی که راهنمایی می‌کنید</h2>
+      {% if capacity %}<span class="pill" title="ظرفیت راهنمایی">{{ capacity.used|fa }} از {{ capacity.max|fa }}</span>{% endif %}
+    </div>
+    {% if advisees %}
+      <ul class="people">
+      {% for row in advisees %}
+        <li><a href="{% url 'case_detail' row.case.pk %}"><span class="avatar sm" aria-hidden="true">{{ row.case.author.first_name|default:row.case.author.username|slice:":1" }}</span>
+          <span><strong>{{ row.case.author }}</strong><small>{{ row.case.get_state_display }}</small></span></a></li>
+      {% endfor %}
+      </ul>
+    {% else %}<p class="empty">هنوز راهنمای دانشجویی نیستید.</p>{% endif %}
+  </section>
+  <section class="people-box" aria-labelledby="refereeing-title">
+    <div class="people-head"><h2 id="refereeing-title">دانشجویانی که داوری می‌کنید</h2><span class="pill">{{ refereeing|length|fa }}</span></div>
+    {% if refereeing %}
+      <ul class="people">
+      {% for row in refereeing %}
+        <li><a href="{% url 'case_detail' row.case.pk %}"><span class="avatar sm" aria-hidden="true">{{ row.case.author.first_name|default:row.case.author.username|slice:":1" }}</span>
+          <span><strong>{{ row.case.author }}</strong><small>{{ row.case.get_state_display }}</small></span></a></li>
+      {% endfor %}
+      </ul>
+    {% else %}<p class="empty">داوری پرونده‌ای به شما سپرده نشده است.</p>{% endif %}
+  </section>
+</div>
+
+<section class="section" aria-labelledby="advised-projects">
+  <div class="section-head"><h2 id="advised-projects" class="section-title">پروژه‌هایی که راهنمایی می‌کنید</h2><span class="count">{{ advisees|length|fa }}</span></div>
+  {% if advisees %}{% include "workflow/_people_table.html" with rows=advisees person="advisee" %}
+  {% else %}<p class="empty">درخواست‌های راهنمایی دانشجویان در کارت «منتظر بررسی و تأیید شماست» می‌آید.</p>{% endif %}
+</section>
+
+<section class="section" aria-labelledby="refereed-projects">
+  <div class="section-head"><h2 id="refereed-projects" class="section-title">پروژه‌هایی که داوری می‌کنید</h2><span class="count">{{ refereeing|length|fa }}</span></div>
+  {% if refereeing %}{% include "workflow/_people_table.html" with rows=refereeing person="referee" %}
+  {% else %}<p class="empty">وقتی مدیر گروه شما را داور پروژه‌ای کند، این‌جا می‌آید.</p>{% endif %}
+</section>
+
+{% if user.is_department_head %}
+<section class="section head-panel" aria-labelledby="dept-title">
+  <div class="section-head">
+    <h2 id="dept-title" class="section-title">همه‌ی پروژه‌های گروه {{ user.department }}</h2>
+    <span class="muted">{{ head_active|fa }} پروژه‌ی جاری</span>
+  </div>
+  {% if head_rows %}{% include "workflow/_people_table.html" with rows=head_rows person="referee" %}
+  {% else %}<p class="empty">پروژه‌ای در این گروه ثبت نشده است.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

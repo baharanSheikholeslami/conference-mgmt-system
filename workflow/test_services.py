@@ -20,6 +20,15 @@ def pdf(name="proposal.pdf"):
     return SimpleUploadedFile(name, b"%PDF-1.4 test", content_type="application/pdf")
 
 
+def signature_png(name="signature.png"):
+    """تصویر امضای کوچک و معتبر برای آزمون تأیید سند."""
+    import io
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGBA", (60, 24), (20, 30, 90, 255)).save(out, "PNG")
+    return SimpleUploadedFile(name, out.getvalue(), content_type="image/png")
+
+
 @override_settings(MEDIA_ROOT=MEDIA)
 class WorkflowTestCase(TestCase):
     """پایه‌ی مشترک: یک گروه، همه‌ی نقش‌ها و چند تابع میان‌بر."""

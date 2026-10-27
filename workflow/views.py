@@ -14,15 +14,17 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import F, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.views.decorators.http import require_GET, require_POST
 
 from agents import services as agents
 
-from . import forms, rules, services
-from .enums import CaseRole, DocKind, State, UserType
-from .models import DocumentVersion, ProjectCase
+from . import forms, rules, services, viewer
+from . import statemachine as sm
+from .enums import CaseRole, DeadlineKind, DocKind, State, UserType
+from .models import Deadline, DocumentVersion, ProjectCase, Signature
 
 # ترتیب مسیر اصلی، برای نوار پیشرفت صفحه‌ی پرونده («اصلاح» هم‌ردیف «داوری» است)
 STAGES = [State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.DRAFTING, State.ADVISOR_REVIEW,
@@ -31,6 +33,26 @@ STAGES = [State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.DRAFTING, State.
           State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED, State.COMPLETED]
 STAGE_OF = {state: i for i, state in enumerate(STAGES, 1)} | {
     State.REVISION: STAGES.index(State.REFEREE_REVIEW) + 1}
+
+# پنج «مرحله»ی قابل‌فهم برای دانشجو و استاد؛ هر مرحله چند وضعیت ماشین‌حالت را در بر می‌گیرد
+PHASES = [
+    ("انتخاب استاد راهنما", (State.ADVISOR_SELECTION, State.ADVISOR_PENDING)),
+    ("پیشنهاد پروژه", (State.DRAFTING, State.ADVISOR_REVIEW)),
+    ("داوری و تصویب", (State.EDU_REGISTRATION, State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW,
+                       State.REVISION, State.COUNCIL_APPROVAL)),
+    ("اجرا و پایان‌نامه", (State.IN_PROGRESS, State.THESIS_ADVISOR_REVIEW)),
+    ("دفاع", (State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED)),
+]
+PHASE_OF = {state: i for i, (_, states) in enumerate(PHASES) for state in states}
+
+
+def phases(case):
+    """گام‌های نوار مرحله‌ها: done / current / next. پرونده‌ی ردشده یا لغوشده نوار ندارد."""
+    if case.state in (State.REJECTED, State.CANCELLED):
+        return []
+    current = len(PHASES) if case.state == State.COMPLETED else PHASE_OF[case.state]
+    return [{"label": label, "status": "done" if i < current else "current" if i == current else "next"}
+            for i, (label, _) in enumerate(PHASES)]
 
 
 SUGGESTION_PURPOSE = {"select_advisor": "advisor", "assign_referees": "referee"}
@@ -84,17 +106,79 @@ def _reminders(rows):
             for r in rows if r.todo and r.role_set & reviewing]
 
 
+STUDENT_DEADLINES = (DeadlineKind.PROPOSAL_SUBMISSION, DeadlineKind.THESIS_DELIVERY)
+
+
 def _timers(rows, user):
-    """تایمر مهلت‌ها برای دانشجو: هر مهلت باز پرونده‌های خودش، با فاصله‌ی ماه و روز."""
-    today = timezone.localdate()
+    """
+    یادآور مهلت‌های مهم دانشجو: فقط تحویل پیشنهاد و پایان‌نامه (دفاع جدا نمایش داده می‌شود)؛
+    مهلت‌های داوری و نمره کار استادان و آموزش است و این‌جا نمی‌آید.
+    """
     timers = []
     for r in rows:
         if CaseRole.AUTHOR not in r.role_set or r.case.is_terminal:
             continue
         for d in r.case.deadlines.all():
-            if d.satisfied_at is None and not d.is_lower_bound:
+            if d.satisfied_at is None and d.kind in STUDENT_DEADLINES:
                 timers.append({"case": r.case, "deadline": d, "key": d.due_date})
     return sorted(timers, key=lambda t: t["key"])
+
+
+def _defense(case):
+    """کارت دفاع دانشجو: تاریخ و محل اگر تعیین شده، وگرنه زودترین تاریخ مجاز پس از تصویب."""
+    if case is None or case.is_terminal:
+        return None
+    if case.defense_date:
+        return {"date": case.defense_date, "place": case.defense_place, "scheduled": True}
+    earliest = next((d for d in case.deadlines.all() if d.kind == DeadlineKind.DEFENSE_EARLIEST), None)
+    return {"date": earliest.due_date, "scheduled": False} if earliest else None
+
+
+def _student_context(user, rows):
+    mine = [r.case for r in rows if CaseRole.AUTHOR in r.role_set]
+    case = next((c for c in mine if not c.is_terminal), mine[0] if mine else None)
+    return {
+        "case": case,
+        "case_phases": phases(case) if case else [],
+        "past": [c for c in mine if c != case],
+        "choose_advisor": case is not None and case.state == State.ADVISOR_SELECTION,
+        "defense": _defense(case),
+    }
+
+
+def _faculty_context(user, rows):
+    head_rows = [r for r in rows if CaseRole.HEAD in r.role_set]
+    return {
+        "head_rows": head_rows,
+        "head_pending": [r for r in head_rows if any(o.transition.actor == CaseRole.HEAD for o in r.todo)],
+        "head_active": sum(1 for r in head_rows if not r.case.is_terminal),
+    }
+
+
+def _edu_context(rows):
+    cases = ProjectCase.objects.all()
+    counts = {s: 0 for s in State}
+    for s in cases.values_list("state", flat=True):
+        counts[s] += 1
+    phase_rows = []
+    for label, states in PHASES:
+        items = [(st, counts[st]) for st in states]
+        phase_rows.append({"label": label, "count": sum(n for _, n in items),
+                           "states": [(st, n) for st, n in items if n]})
+    top = max([p["count"] for p in phase_rows] + [1])
+    for p in phase_rows:
+        p["width"] = round(100 * p["count"] / top)
+    today = timezone.localdate()
+    overdue = (Deadline.objects.filter(satisfied_at__isnull=True, due_date__lt=today)
+               .exclude(kind=DeadlineKind.DEFENSE_EARLIEST)
+               .exclude(case__state__in=sm.TERMINAL_STATES)
+               .select_related("case__author").order_by("due_date")[:8])
+    return {
+        "phase_rows": phase_rows,
+        "overdue": overdue,
+        "totals": {"active": sum(counts[s] for s in sm.ACTIVE_STATES), "completed": counts[State.COMPLETED],
+                   "stopped": counts[State.REJECTED] + counts[State.CANCELLED]},
+    }
 
 
 @login_required
@@ -105,7 +189,8 @@ def dashboard(request):
                 role_set=frozenset(c.roles_of(user)))
             for c in services.cases_for(user)]
     faculty = user.user_type == UserType.FACULTY
-    return render(request, "workflow/dashboard.html", {
+    is_edu = services.sees_all_projects(user)
+    context = {
         "pending": [r for r in rows if r.todo],
         "others": [r for r in rows if not r.todo],
         "can_create": services.can_create_case(user),
@@ -116,8 +201,18 @@ def dashboard(request):
             State.ADVISOR_SELECTION, State.REJECTED, State.CANCELLED)] if faculty else [],
         "refereeing": [r for r in rows if CaseRole.REFEREE in r.role_set] if faculty else [],
         "capacity": {"used": services.advisee_count(user), "max": rules.MAX_ADVISEES} if faculty else None,
-        "is_edu": services.sees_all_projects(user),
-    })
+        "is_edu": is_edu,
+    }
+    if is_edu:
+        template = "workflow/dashboard_edu.html"
+        context.update(_edu_context(rows))
+    elif faculty:
+        template = "workflow/dashboard_faculty.html"
+        context.update(_faculty_context(user, rows))
+    else:
+        template = "workflow/dashboard_student.html"
+        context.update(_student_context(user, rows))
+    return render(request, template, context)
 
 
 @login_required
@@ -139,25 +234,121 @@ def case_create(request):
         "form": form, "title": "ثبت پرونده‌ی جدید", "submit_label": "ثبت پرونده"})
 
 
+# اقدام‌هایی که دانشجو در باکس همان سند می‌بیند (نه در کارت «اقدام‌های شما»)
+SUBMIT_ACTIONS = {"submit_proposal": DocKind.PROPOSAL, "resubmit_proposal": DocKind.PROPOSAL,
+                  "submit_thesis": DocKind.THESIS}
+# تأیید و بازگرداندن سند در نمایشگر کناری سند انجام می‌شود (تأیید همراه با امضای الکترونیک)
+DOC_ACTIONS = {"advisor_approve": DocKind.PROPOSAL, "advisor_return": DocKind.PROPOSAL,
+               "thesis_approve": DocKind.THESIS, "thesis_return": DocKind.THESIS,
+               "submit_review": DocKind.PROPOSAL}
+SIGN_ACTIONS = ("advisor_approve", "thesis_approve")
+TEMPLATES = {DocKind.PROPOSAL: "workflow/templates/proposal-template.docx",
+             DocKind.THESIS: "workflow/templates/thesis-template.docx"}
+
+
+def _panel_url(case, version, mode=""):
+    url = f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}"
+    return f"{url}&panel={mode}" if mode else url
+
+
+def _action_buttons(case, offers):
+    """
+    کارت «اقدام‌های شما». ارسال سند (دانشجو) و تأیید/بازگرداندن سند (استاد) در باکس همان سند و
+    نمایشگر آن است، پس این‌جا تکرار نمی‌شود؛ فقط اگر سندی نباشد پیوند به فرم معمولی می‌ماند.
+    """
+    buttons = []
+    for o in offers:
+        action = o.transition.action
+        if action in SUBMIT_ACTIONS or action == "cancel":
+            continue
+        if action in DOC_ACTIONS and services.latest_version(case, DOC_ACTIONS[action]):
+            continue
+        buttons.append({"transition": o.transition, "blocked": o.blocked,
+                        "url": reverse("case_action", args=[case.pk, action])})
+    return buttons
+
+
+def _doc_boxes(case, user, offers, versions):
+    """دو باکس کنار هم «پیشنهاد» و «پایان‌نامه» با آخرین نسخه، نسخه‌های پیشین و اقدام دانشجو."""
+    upload_kind = services.uploadable_kind(case, user)
+    boxes = []
+    for kind in (DocKind.PROPOSAL, DocKind.THESIS):
+        mine = [v for v in versions if v.kind == kind]
+        latest = mine[0] if mine else None
+        submit = next((o for o in offers if SUBMIT_ACTIONS.get(o.transition.action) == kind), None)
+        boxes.append({
+            "kind": kind, "label": DocKind(kind).label, "latest": latest, "older": mine[1:],
+            "template": TEMPLATES[kind], "can_upload": upload_kind == kind, "submit": submit,
+            "is_author": user.id == case.author_id,
+            "signatures": list(latest.signatures.select_related("signer")) if latest else [],
+            "signed": _signed_copy(latest) if latest else None,
+            "format": _extension(latest.file.name).upper() if latest else "",
+            "comment_count": latest.comments.count() if latest else 0,
+            "decision": services.doc_decision(case, user, latest) if latest else None,
+            "url": _panel_url(case, latest) if latest else "",
+        })
+    return boxes
+
+
+def _panel(request, case, versions):
+    """داده‌ی نمایشگر کناری سند (?doc=<نسخه>)، یا None."""
+    try:
+        pk = int(request.GET.get("doc", ""))
+    except ValueError:
+        return None
+    version = next((v for v in versions if v.pk == pk), None)
+    if version is None:
+        return None
+    user = request.user
+    parts = viewer.sections(version)
+    comments = list(version.comments.select_related("author"))
+    general = viewer.with_comments(parts, comments)
+    decision = services.doc_decision(case, user, version)
+    mode = request.GET.get("panel", "")
+    fmt = _extension(version.file.name)
+    viewable = fmt in VIEWABLE
+    signed = _signed_copy(version)
+    show_signed = signed is not None and request.GET.get("copy") != "original"
+    file_url = reverse("document_inline", args=[version.pk]) + ("?signed=1" if show_signed else "")
+    # نظر روی بخش: فهرست سرفصل‌های سند برای انتخاب در نمای «فایل»
+    choices = [(0, "کل سند")] + [(p.index, p.title) for p in parts or [] if p.lines or p.index != 1]
+    return {
+        "version": version, "sections": parts, "general": general, "comment_total": len(comments),
+        "comments": comments, "section_choices": choices,
+        "can_comment": services.can_comment(case, user, version),
+        "decision": decision, "mode": mode if decision and mode in ("sign", "revise") else "",
+        "format": fmt, "viewable": viewable,
+        "show_file": viewable and (request.GET.get("view") != "text" or parts is None),
+        "signed": signed, "show_signed": show_signed, "file_url": file_url,
+        "signatures": list(version.signatures.select_related("signer")),
+        "url": _panel_url(case, version),
+        "close_url": reverse("case_detail", args=[case.pk]),
+        "max_signature_mb": services.MAX_SIGNATURE_MB,
+    }
+
+
 @login_required
 def case_detail(request, pk):
     case = _case_or_404(request.user, pk)
     user = request.user
     offers = services.available_actions(case, user)
+    versions = list(services.visible_versions(case, user))
     stage = STAGE_OF.get(case.state)
     return render(request, "workflow/case_detail.html", {
         "case": case,
         "roles": [r.label for r in sorted(case.roles_of(user))],
-        "offers": [o for o in offers if o.transition.action != "cancel"],
+        "offers": _action_buttons(case, offers),
         "cancel_offer": next((o for o in offers if o.transition.action == "cancel"), None),
-        "upload_kind": services.uploadable_kind(case, user),
         "can_edit": services.can_edit(case, user),
-        "versions": services.visible_versions(case, user),
+        "boxes": _doc_boxes(case, user, offers, versions),
+        "panel": _panel(request, case, versions),
         "feedback": services.pending_feedback(case),
         "is_edu": services.sees_all_projects(user),
+        "is_author": user.id == case.author_id,
         "assignments": case.referee_assignments.select_related("referee"),
         "deadlines": case.deadlines.all(),
         "events": services.visible_events(case, user),
+        "phases": phases(case),
         "stage": stage, "stage_count": len(STAGES),
         "progress": round(100 * stage / len(STAGES)) if stage else None,
     })
@@ -198,7 +389,9 @@ def document_upload(request, pk):
             return redirect("case_detail", pk=case.pk)
     return render(request, "workflow/form.html", {
         "form": form, "case": case, "multipart": True, "submit_label": "بارگذاری",
-        "title": f"بارگذاری {DocKind(kind).label}"})
+        "title": f"بارگذاری {DocKind(kind).label}", "template_file": TEMPLATES[kind],
+        "intro": "فایل را مطابق قالب نمونه آماده کنید. پس از بارگذاری، سامانه قالب آن را بررسی می‌کند و "
+                 "اگر بخشی جا مانده باشد همین‌جا می‌گوید؛ بعد می‌توانید دوباره بارگذاری کنید یا همین نسخه را بفرستید."})
 
 
 @login_required
@@ -225,6 +418,12 @@ def case_action(request, pk, action):
     if offer.blocked:
         messages.error(request, offer.blocked)
         return redirect("case_detail", pk=case.pk)
+
+    if action in SIGN_ACTIONS:
+        # تأیید سند فقط با امضای الکترونیک و از نمایشگر سند انجام می‌شود
+        version = services.latest_version(case, DOC_ACTIONS[action])
+        if version:
+            return redirect(_panel_url(case, version, "sign"))
 
     t = offer.transition
     form = forms.action_form_class(action)(_posted(request), case=case, transition=t, user=request.user)
@@ -270,3 +469,122 @@ def project_list(request):
         "state_counts": [(s, counts[s]) for s in State if counts[s]],
         "total": sum(counts.values()),
     })
+
+
+# ───────────────────────── نمایشگر سند: نظر، تأیید با امضا، بازگرداندن، فایل‌ها ─────────────────────────
+
+def _visible_version(user, pk):
+    """نسخه‌ای که کاربر حق دیدنش را دارد، همراه پرونده‌اش؛ وگرنه ۴۰۴."""
+    version = get_object_or_404(DocumentVersion.objects.select_related("case"), pk=pk)
+    case = services.cases_for(user).filter(pk=version.case_id).first()
+    if case is None or not services.can_download(case, user, version):
+        raise Http404
+    return case, version
+
+
+@login_required
+@require_POST
+def document_comment(request, pk):
+    case, version = _visible_version(request.user, pk)
+    try:
+        section = max(int(request.POST.get("section", 0)), 0)
+    except ValueError:
+        section = 0
+    title = request.POST.get("section_title", "")
+    if section and not title:
+        # در نمای «فایل» فقط شماره‌ی بخش از فهرست انتخاب می‌شود؛ سرفصل از متن سند خوانده می‌شود
+        title = next((p.title for p in viewer.sections(version) or [] if p.index == section), "")
+    try:
+        services.add_comment(case, request.user, version, request.POST.get("text", ""), section, title)
+    except services.NotAllowed:
+        raise PermissionDenied from None
+    except services.WorkflowError as e:
+        messages.error(request, str(e))
+    view = "&view=text" if request.POST.get("view") == "text" else ""
+    return redirect(f"{_panel_url(case, version)}{view}#{'s-' + str(section) if view else 'comments'}")
+
+
+@login_required
+@require_POST
+def document_decide(request, pk):
+    case, version = _visible_version(request.user, pk)
+    approve = request.POST.get("decision") == "approve"
+    try:
+        services.decide_document(case, request.user, version, approve, request.POST.get("note", ""),
+                                 request.FILES.get("signature"))
+    except services.NotAllowed:
+        raise PermissionDenied from None
+    except services.WorkflowError as e:
+        messages.error(request, str(e))
+        return redirect(_panel_url(case, version, "sign" if approve else "revise"))
+    if approve:
+        # پس از تأیید، نسخه‌ی امضاشده در نمایشگر باز می‌شود تا استاد امضای خود را روی سند ببیند
+        messages.success(request, f"{version.get_kind_display()} تأیید و امضای شما روی سند ثبت شد.")
+        return redirect(_panel_url(case, version))
+    messages.success(request, f"{version.get_kind_display()} برای اصلاح به دانشجو برگشت.")
+    return redirect("case_detail", pk=case.pk)
+
+
+CONTENT_TYPES = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+
+
+# قالب‌هایی که نمایشگر می‌تواند با همان شکل اصلی نشان دهد (PDF در iframe، Word با docx-preview)
+VIEWABLE = ("pdf", "docx")
+
+
+def _extension(name):
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
+def _signed_copy(version):
+    """آخرین فایل امضاشده‌ی این نسخه (همه‌ی امضاها روی آن جمع شده‌اند)، یا None."""
+    return version.signatures.exclude(signed_file="").order_by("-created_at").first()
+
+
+def _inline(field, filename=None):
+    extension = _extension(field.name)
+    response = FileResponse(field.open("rb"), filename=filename, as_attachment=filename is not None,
+                            content_type=CONTENT_TYPES.get(extension, "application/octet-stream"))
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@require_GET
+@xframe_options_sameorigin
+def document_inline(request, pk):
+    """فایل PDF یا Word برای نمایش درون نمایشگر، با همان کنترل دسترسی دانلود؛ ?signed=1 نسخه‌ی امضاشده را می‌دهد."""
+    _, version = _visible_version(request.user, pk)
+    field = version.file
+    if request.GET.get("signed"):
+        signed = _signed_copy(version)
+        if signed is None:
+            raise Http404
+        field = signed.signed_file
+    if _extension(field.name) not in VIEWABLE:
+        raise Http404
+    return _inline(field)
+
+
+def _visible_signature(user, pk):
+    signature = get_object_or_404(Signature.objects.select_related("version"), pk=pk)
+    _visible_version(user, signature.version_id)
+    return signature
+
+
+@login_required
+@require_GET
+def signature_image(request, pk):
+    return _inline(_visible_signature(request.user, pk).image)
+
+
+@login_required
+@require_GET
+def signed_download(request, pk):
+    signature = _visible_signature(request.user, pk)
+    if not signature.signed_file:
+        raise Http404
+    version = signature.version
+    return _inline(signature.signed_file, filename=(
+        f"case{version.case_id}-{version.kind}-v{version.number}-signed.{_extension(signature.signed_file.name)}"))

@@ -10,7 +10,7 @@ from . import rules, services
 from .enums import DocKind, ReviewDecision, State
 from .jalali import parse_jalali, to_jalali
 from .models import ProjectCase, User
-from .test_services import MEDIA, WorkflowTestCase, pdf
+from .test_services import MEDIA, WorkflowTestCase, pdf, signature_png
 
 
 @override_settings(MEDIA_ROOT=MEDIA)
@@ -321,6 +321,15 @@ class GuideScenarioTests(TestCase):
         response = self.client.post(reverse("case_action", args=[case.pk, action]), data)
         self.assertEqual(response.status_code, 302, f"{username}/{action}: {response.content.decode()[:300]}")
 
+    def sign(self, username, case, kind):
+        """تأیید سند از نمایشگر، با بارگذاری تصویر امضا (به‌جای فرم ساده‌ی اقدام)."""
+        self.client.force_login(User.objects.get(username=username))
+        version = services.latest_version(case, kind)
+        response = self.client.post(reverse("document_decide", args=[version.pk]),
+                                    {"decision": "approve", "signature": signature_png()})
+        self.assertRedirects(response, f"{reverse('case_detail', args=[case.pk])}?doc={version.pk}")
+        self.assertTrue(version.signatures.get().signed_file)      # امضا روی سند docx نشسته است
+
     def upload(self, username, case, filename):
         self.client.force_login(User.objects.get(username=username))
         with open(self.SAMPLES / filename, "rb") as f:
@@ -348,7 +357,7 @@ class GuideScenarioTests(TestCase):
         self.act("leila.sharifi", case, "advisor_accept")
         self.upload("sara.nouri", case, "proposal-sara-nouri.docx")
         self.act("sara.nouri", case, "submit_proposal")
-        self.act("leila.sharifi", case, "advisor_approve")
+        self.sign("leila.sharifi", case, DocKind.PROPOSAL)
         self.act("maryam.salehi", case, "edu_register")
         self.act("ali.ahmadi", case, "assign_referees", referees=[mousavi.pk])
         self.act("hossein.mousavi", case, "submit_review", decision="approve")
@@ -358,7 +367,7 @@ class GuideScenarioTests(TestCase):
 
         self.upload("sara.nouri", case, "thesis-sara-nouri.docx")
         self.act("sara.nouri", case, "submit_thesis")
-        self.act("leila.sharifi", case, "thesis_approve")
+        self.sign("leila.sharifi", case, DocKind.THESIS)
 
         call_command("backdate_case", str(case.pk), "--days", "120", stdout=StringIO())
         self.act("maryam.salehi", case, "schedule_defense",

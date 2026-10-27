@@ -322,39 +322,57 @@ class ValidationTests(AgentTestCase):
 # ───────────────────────── ۲. دستیار RAG ─────────────────────────
 
 class ValidationVisibilityTests(AgentTestCase):
-    """بررسی خودکار قالب: برای دانشجو هنگام ارسال پیشنهاد، برای راهنما و داور هنگام تأیید؛ نه جای دیگر."""
+    """نکته‌های بررسی خودکار قالب فقط هنگام بارگذاری و فقط برای نویسنده است؛ پس از ارسال برای هیچ‌کس."""
 
     def sees(self, user, case):
         self.client.force_login(user)
         return "بررسی خودکار قالب" in self.client.get(reverse("case_detail", args=[case.pk])).content.decode()
 
-    def test_student_sees_it_only_while_drafting(self):
+    def test_student_sees_it_only_while_uploading(self):
         case = self.drafting_case()
         self.upload(case)
         self.assertTrue(self.sees(self.student, case))
-        for user in (self.advisor, self.edu):                       # راهنما هنوز مرحله‌ی تأیید نرسیده است
+        for user in (self.advisor, self.edu):
             self.assertFalse(self.sees(user, case), user.username)
         case = self.do(case, "submit_proposal", self.student)
-        self.assertFalse(self.sees(self.student, case))             # پس از ارسال دیگر برای دانشجو نیست
-        self.assertTrue(self.sees(self.advisor, case))              # مرحله‌ی تأیید راهنما
-        case = self.do(case, "advisor_approve", self.advisor)
-        self.assertFalse(self.sees(self.advisor, case))
+        for user in (self.student, self.advisor):                   # پس از ارسال، مرحله‌ی بارگذاری تمام شده است
+            self.assertFalse(self.sees(user, case), user.username)
 
-    def test_referee_sees_it_while_reviewing_and_only_for_the_latest_version(self):
+    def test_referees_never_see_it_and_a_new_version_shows_it_again_to_the_author(self):
         case = self.drafting_case()
         self.upload(case)
         case = self.do(case, "submit_proposal", self.student)
         case = self.do(case, "advisor_return", self.advisor, note="اصلاح")
         self.upload(case)                                           # نسخه‌ی ۲
+        self.client.force_login(self.student)
+        page = self.client.get(reverse("case_detail", args=[case.pk])).content.decode()
+        self.assertEqual(page.count("بررسی خودکار قالب"), 1)       # فقط برای آخرین نسخه
         case = self.do(case, "submit_proposal", self.student)
         case = self.do(case, "advisor_approve", self.advisor)
         case = self.do(case, "edu_register", self.edu)
         case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
-        self.assertTrue(self.sees(self.ref1, case))
-        self.assertFalse(self.sees(self.head, case))
-        self.client.force_login(self.ref1)
-        page = self.client.get(reverse("case_detail", args=[case.pk])).content.decode()
-        self.assertEqual(page.count("بررسی خودکار قالب"), 1)
+        for user in (self.ref1, self.head, self.student):
+            self.assertFalse(self.sees(user, case), user.username)
+
+    def test_thesis_upload_is_checked_against_the_thesis_checklist(self):
+        case = self.drafting_case()
+        self.upload(case)
+        case = self.do(case, "submit_proposal", self.student)
+        case = self.do(case, "advisor_approve", self.advisor)
+        case = self.do(case, "edu_register", self.edu)
+        case = self.do(case, "assign_referees", self.head, referees=[self.ref1])
+        case = self.do(case, "submit_review", self.ref1, decision="approve")
+        case = self.do(case, "council_approve", self.edu)
+        before = len(self.calls("validate-proposal"))
+        with self.captureOnCommitCallbacks(execute=True):
+            version = wf.upload_document(case, self.student, DocKind.THESIS, docx(name="thesis.docx"))
+        (body,) = self.calls("validate-proposal")[before:]
+        self.assertEqual(body["document"]["kind"], "thesis")
+        self.assertEqual([i["key"] for i in body["checklist"]], [i["key"] for i in checklist.THESIS_ITEMS])
+        self.api("api_validation_result", args=(version.validation.pk,), data={"found": []})
+        self.assertTrue(self.sees(self.student, case))
+        case = self.do(case, "submit_thesis", self.student)
+        self.assertFalse(self.sees(self.student, case))
 
 
 class RagTests(AgentTestCase):

@@ -1,0 +1,177 @@
+{% load static portal %}{% with v=panel.version %}
+<aside class="doc-panel" aria-label="نمایشگر سند">
+  <header class="doc-panel-head">
+    <div class="doc-panel-title">
+      <strong>{{ v.get_kind_display }}</strong>
+      <small>نسخه‌ی {{ v.number|fa }} — {{ v.uploaded_by }}، {{ v.uploaded_at|jalali }}</small>
+    </div>
+    <div class="doc-panel-tools">
+      {% if panel.viewable and panel.sections %}
+        <nav class="seg" aria-label="شیوه‌ی نمایش">
+          <a href="{{ panel.url }}"{% if panel.show_file %} aria-current="true"{% endif %}>فایل</a>
+          <a href="{{ panel.url }}&amp;view=text"{% if not panel.show_file %} aria-current="true"{% endif %}>متن</a>
+        </nav>
+      {% endif %}
+      <a class="icon-btn" href="{% url 'document_download' v.pk %}" title="دانلود فایل اصلی" aria-label="دانلود فایل اصلی">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.5h12"/></svg></a>
+      {% if panel.signed %}
+      <a class="btn compact approve" href="{% url 'signed_download' panel.signed.pk %}" title="دانلود نسخه‌ی امضاشده">دانلود امضاشده</a>
+      {% endif %}
+      <a class="icon-btn" href="{{ panel.close_url }}" title="بستن" aria-label="بستن نمایشگر">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"/></svg></a>
+    </div>
+  </header>
+
+  <div class="doc-panel-body">
+    {% if panel.show_file %}
+      {% if panel.signed %}
+        <nav class="seg copy-switch" aria-label="نسخه‌ی فایل">
+          <a href="{{ panel.url }}"{% if panel.show_signed %} aria-current="true"{% endif %}>نسخه‌ی امضاشده</a>
+          <a href="{{ panel.url }}&amp;copy=original"{% if not panel.show_signed %} aria-current="true"{% endif %}>نسخه‌ی بارگذاری‌شده</a>
+        </nav>
+      {% endif %}
+      {% if panel.format == "pdf" %}
+        <iframe class="doc-frame" src="{{ panel.file_url }}" title="{{ v.get_kind_display }}"></iframe>
+      {% else %}
+        <div class="docx-view" data-src="{{ panel.file_url }}" aria-label="{{ v.get_kind_display }}">
+          <p class="muted docx-status">در حال باز کردن فایل Word…</p>
+          <noscript><p class="empty">برای دیدن فایل Word، جاوااسکریپت مرورگر را روشن کنید یا فایل را دانلود کنید.</p></noscript>
+        </div>
+      {% endif %}
+
+      <section class="comments-block" id="comments" aria-label="نظرها">
+        <h4>نظرها{% if panel.comment_total %} <span class="pill">{{ panel.comment_total|fa }}</span>{% endif %}</h4>
+        {% for c in panel.comments %}
+          <div class="comment"><span class="pill">{{ c.section_title|default:"کل سند" }}</span> <strong>{{ c.author }}</strong> <small>{{ c.created_at|jalali_datetime }}</small><p>{{ c.text }}</p></div>
+        {% empty %}<p class="muted">هنوز نظری ثبت نشده است.</p>{% endfor %}
+        {% if panel.can_comment %}
+          <form method="post" action="{% url 'document_comment' v.pk %}" class="comment-inline">{% csrf_token %}
+            <label class="section-pick">بخش
+              <select name="section">{% for index, title in panel.section_choices %}<option value="{{ index }}">{{ title }}</option>{% endfor %}</select>
+            </label>
+            <textarea name="text" rows="2" required aria-label="متن نظر" placeholder="مثلاً: معیار ارزیابی را کمّی بنویسید."></textarea>
+            <button class="btn compact" type="submit">ثبت نظر</button>
+          </form>
+        {% endif %}
+      </section>
+    {% elif panel.sections is None %}
+      <p class="empty">پیش‌نمایش این فایل ممکن نیست (قالب doc قدیمی یا فایل اسکن‌شده). فایل را دانلود کنید؛ نظر کلی را پایین همین صفحه بنویسید.</p>
+    {% else %}
+      <article class="paper">
+      {% for s in panel.sections %}
+        {% if s.lines or s.index != 1 %}
+        <section class="paper-section{% if s.comments %} has-comments{% endif %}" id="s-{{ s.index }}">
+          {% if s.index != 1 %}<h4>{{ s.title }}</h4>{% endif %}
+          {% for line in s.lines %}<p>{{ line }}</p>{% endfor %}
+          {% for c in s.comments %}
+            <div class="comment"><strong>{{ c.author }}</strong> <small>{{ c.created_at|jalali_datetime }}</small><p>{{ c.text }}</p></div>
+          {% endfor %}
+          {% if panel.can_comment %}
+            <details class="comment-add">
+              <summary>نظر روی این بخش</summary>
+              <form method="post" action="{% url 'document_comment' v.pk %}">{% csrf_token %}
+                <input type="hidden" name="section" value="{{ s.index }}"><input type="hidden" name="view" value="text">
+                <input type="hidden" name="section_title" value="{{ s.title }}">
+                <textarea name="text" rows="3" required aria-label="نظر روی {{ s.title }}" placeholder="مثلاً: معیار ارزیابی را کمّی بنویسید."></textarea>
+                <button class="btn compact" type="submit">ثبت نظر</button>
+              </form>
+            </details>
+          {% endif %}
+        </section>
+        {% endif %}
+      {% endfor %}
+        <section class="paper-section signature-area" aria-label="محل امضا">
+          <h4>محل امضا</h4>
+          {% for sig in panel.signatures %}
+            <figure class="signature">
+              <img src="{% url 'signature_image' sig.pk %}" alt="امضای {{ sig.signer }}">
+              <figcaption>{{ sig.get_role_display }}: {{ sig.signer }} — {{ sig.created_at|jalali }}
+                {% if sig.signed_file %}<a href="{% url 'signed_download' sig.pk %}">دانلود نسخه‌ی امضاشده</a>{% endif %}</figcaption>
+            </figure>
+          {% empty %}<p class="muted">هنوز امضایی ثبت نشده است.</p>{% endfor %}
+        </section>
+      </article>
+    {% endif %}
+
+    {% if not panel.show_file and panel.general or not panel.show_file and panel.can_comment %}
+    <section class="general-comments" id="s-0">
+      <h4>نظر درباره‌ی کل سند</h4>
+      {% for c in panel.general %}
+        <div class="comment"><strong>{{ c.author }}</strong> <small>{{ c.created_at|jalali_datetime }}</small><p>{{ c.text }}</p></div>
+      {% endfor %}
+      {% if panel.can_comment %}
+        <form method="post" action="{% url 'document_comment' v.pk %}" class="comment-inline">{% csrf_token %}
+          <input type="hidden" name="section" value="0"><input type="hidden" name="view" value="text">
+          <textarea name="text" rows="2" required aria-label="نظر درباره‌ی کل سند" placeholder="نظر کلی شما درباره‌ی این سند"></textarea>
+          <button class="btn compact secondary" type="submit">ثبت نظر</button>
+        </form>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  {% if panel.decision %}
+  <footer class="doc-panel-foot">
+    {% if panel.mode == "sign" %}
+      <form method="post" action="{% url 'document_decide' v.pk %}" enctype="multipart/form-data" class="decide-form">{% csrf_token %}
+        <input type="hidden" name="decision" value="approve">
+        <h4>تأیید و امضای الکترونیک</h4>
+        <p class="muted">تصویر امضای خود را بارگذاری کنید. امضا در «محل امضا»ی سند قرار می‌گیرد و نسخه‌ی امضاشده ذخیره می‌شود.</p>
+        <label class="drop">
+          <input type="file" name="signature" accept=".png,.jpg,.jpeg" required>
+          <span>PNG یا JPG، حداکثر {{ panel.max_signature_mb|fa }} مگابایت؛ ترجیحاً با زمینه‌ی سفید یا شفاف</span>
+        </label>
+        <textarea name="note" rows="2" aria-label="توضیح (اختیاری)" placeholder="توضیح (اختیاری)"></textarea>
+        <div class="actions">
+          <button class="btn approve" type="submit">ثبت تأیید و امضا</button>
+          <a class="btn ghost" href="{{ panel.url }}">انصراف</a>
+        </div>
+      </form>
+    {% elif panel.mode == "revise" %}
+      <form method="post" action="{% url 'document_decide' v.pk %}" class="decide-form">{% csrf_token %}
+        <input type="hidden" name="decision" value="revise">
+        <h4>بازگرداندن برای اصلاح</h4>
+        <p class="muted">{% if panel.comment_total %}نظرهای شما روی بخش‌ها برای دانشجو فرستاده می‌شود؛ اگر لازم است توضیح کلی هم بنویسید.{% else %}بنویسید دانشجو چه چیزی را اصلاح کند، یا پیش از این روی بخش‌های سند نظر بگذارید.{% endif %}</p>
+        <textarea name="note" rows="3" aria-label="توضیح برای دانشجو" placeholder="توضیح برای دانشجو"></textarea>
+        <div class="actions">
+          <button class="btn return" type="submit">بازگرداندن به دانشجو</button>
+          <a class="btn ghost" href="{{ panel.url }}">انصراف</a>
+        </div>
+      </form>
+    {% else %}
+      <div class="actions">
+        <a class="btn approve" href="{{ panel.url }}&amp;panel=sign">{{ panel.decision.approve_label }}</a>
+        <a class="btn return" href="{{ panel.url }}&amp;panel=revise">{{ panel.decision.revise_label }}</a>
+      </div>
+    {% endif %}
+  </footer>
+  {% endif %}
+</aside>
+{% if panel.show_file and panel.format == "docx" %}
+<script src="{% static 'workflow/vendor/jszip.min.js' %}"></script>
+<script src="{% static 'workflow/vendor/docx-preview.min.js' %}"></script>
+<script>
+(function () {
+  // فایل Word با همان صفحه‌بندی، فونت، جدول و تصویر (از جمله امضا) نمایش داده می‌شود؛ صفحه‌ها به پهنای نمایشگر کوچک می‌شوند
+  var box = document.querySelector(".docx-view");
+  function fit() {
+    var page = box.querySelector("section.docx");
+    var wrapper = box.querySelector(".docx-wrapper");
+    if (!page || !wrapper) return;
+    wrapper.style.zoom = 1;
+    wrapper.style.zoom = Math.min(1, box.clientWidth / (page.offsetWidth + 24));
+  }
+  fetch(box.dataset.src, { credentials: "same-origin" })
+    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(function (blob) {
+      box.innerHTML = "";
+      return docx.renderAsync(blob, box, null, { inWrapper: true, breakPages: true, ignoreLastRenderedPageBreak: false });
+    })
+    .then(function () { fit(); window.addEventListener("resize", fit); })
+    .catch(function () {
+      box.innerHTML = '<p class="empty">نمایش این فایل Word ممکن نشد. فایل را دانلود کنید یا نمای «متن» را باز کنید.</p>';
+    });
+})();
+</script>
+{% endif %}
+{% endwith %}

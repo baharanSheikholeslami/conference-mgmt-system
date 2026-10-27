@@ -1,0 +1,79 @@
+{% extends "workflow/base.html" %}
+{% load portal %}
+{% block title %}داشبورد{% endblock %}
+{% block content %}
+<header class="greeting">
+  <h1>سلام، {{ user.first_name|default:user }}</h1>
+  <p class="muted">{% if case %}پروژه‌ی شما در مرحله‌ی «{{ case.get_state_display }}» است.{% else %}هنوز پروژه‌ای ثبت نکرده‌اید.{% endif %}</p>
+</header>
+
+<section class="profile-strip" aria-label="مشخصات شما">
+  <div><span>شماره دانشجویی</span><strong>{{ user.student_number|fa|default:"—" }}</strong></div>
+  <div><span>استاد راهنما</span>
+    {% if case.advisor %}<strong>{{ case.advisor }}</strong>{% if case.state == "advisor_pending" %}<small>منتظر پذیرش استاد</small>{% endif %}
+    {% elif choose_advisor %}<a class="btn compact" href="{% url 'case_action' case.pk 'select_advisor' %}">انتخاب استاد راهنما</a>
+    {% else %}<strong class="muted">—</strong>{% endif %}
+  </div>
+  <div><span>استاد مشاور</span><strong>{{ case.co_advisor|default:"—" }}</strong></div>
+  <div><span>گروه آموزشی</span><strong>{{ case.department|default:user.department|default:"—" }}</strong></div>
+</section>
+
+{% if timers or defense %}
+<section class="section" aria-labelledby="deadline-title">
+  <h2 id="deadline-title" class="section-title">مهلت‌های مهم</h2>
+  <div class="timer-grid">
+  {% for t in timers %}
+    <a class="timer-card {{ t.deadline.due_date|time_left_class }}" href="{% url 'case_detail' t.case.pk %}">
+      <small>{{ t.deadline.get_kind_display }}</small>
+      <strong>{{ t.deadline.due_date|time_left }}</strong>
+      <span>{{ t.deadline.due_date|jalali }}</span>
+    </a>
+  {% endfor %}
+  {% if defense %}
+    <a class="timer-card {% if defense.scheduled %}{{ defense.date|time_left_class }}{% else %}calm{% endif %}" href="{% url 'case_detail' case.pk %}">
+      <small>{% if defense.scheduled %}جلسه‌ی دفاع{% else %}زودترین تاریخ مجاز دفاع{% endif %}</small>
+      <strong>{% if defense.scheduled %}{{ defense.date|time_left }}{% else %}{{ defense.date|jalali }}{% endif %}</strong>
+      <span>{% if defense.scheduled %}{{ defense.date|jalali }} — {{ defense.place }}{% else %}زمان دفاع را آموزش دانشکده تعیین می‌کند{% endif %}</span>
+    </a>
+  {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<section class="section" aria-labelledby="project-title">
+  <h2 id="project-title" class="section-title">پروژه‌ی من</h2>
+  {% if case %}
+    <a class="project-card" href="{% url 'case_detail' case.pk %}">
+      <div class="project-card-top">
+        {% include "workflow/_state_badge.html" %}
+        <span class="muted">{{ case.get_semester_display }} {{ case.academic_year|fa }}</span>
+      </div>
+      <h3>{{ case.title_fa }}</h3>
+      {% if case.title_en %}<p class="title-en ltr">{{ case.title_en }}</p>{% endif %}
+      {% if case_phases %}
+      <ol class="phases compact" aria-label="مرحله‌ی پروژه">
+        {% for p in case_phases %}<li class="{{ p.status }}"><span>{{ p.label }}</span></li>{% endfor %}
+      </ol>
+      {% endif %}
+      {% for row in pending %}{% if row.case == case %}
+        <p class="next-step">کار بعدی شما: {% for offer in row.todo %}{{ offer.transition.label }}{% if not forloop.last %}، {% endif %}{% endfor %}</p>
+      {% endif %}{% endfor %}
+    </a>
+  {% else %}
+    <div class="empty-state">
+      <h3>هنوز پروژه‌ای ندارید</h3>
+      <p>عنوان پروژه را ثبت کنید؛ بعد استاد راهنما را انتخاب می‌کنید و قالب پیشنهاد در صفحه‌ی پروژه در دسترس است.</p>
+      {% if can_create %}<a class="btn" href="{% url 'case_create' %}">ثبت پرونده‌ی جدید</a>{% endif %}
+    </div>
+  {% endif %}
+</section>
+
+{% if past %}
+<section class="section" aria-labelledby="past-title">
+  <h2 id="past-title" class="section-title">پرونده‌های پیشین</h2>
+  <ul class="plain-list">
+    {% for c in past %}<li><a href="{% url 'case_detail' c.pk %}">{{ c.title_fa }}</a> {% include "workflow/_state_badge.html" with case=c %}</li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

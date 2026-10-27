@@ -9,7 +9,7 @@
 .btn.small { min-height: 34px; padding: .15rem .95rem; font-size: .86rem; font-weight: 500; }
 
 /* بررسی خودکار قالب، زیر هر نسخه‌ی پیشنهاد */
-.agent-box { background: var(--ai-soft); border: 1px solid var(--ai-line); border-radius: var(--radius-sm); padding: .55rem .9rem; margin-top: .65rem; }
+.agent-box { background: var(--ai-soft); border: 1px solid var(--ai-line); border-radius: var(--radius-sm); padding: .55rem .9rem; }
 .agent-box > summary { cursor: pointer; display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; list-style: none; }
 .agent-box > summary::-webkit-details-marker { display: none; }
 .agent-box > summary::after { content: "▾"; margin-inline-start: auto; color: var(--muted); transition: transform .15s var(--ease); }
@@ -41,7 +41,7 @@ details > summary { cursor: pointer; }
 
 /* جعبه‌ی گفتگوی دستیار */
 .assistant-toggle {
-  position: fixed; bottom: 1.25rem; inset-inline-start: 1.25rem; z-index: 40; font: inherit; font-weight: 600; cursor: pointer;
+  position: fixed; bottom: 1.25rem; inset-inline-end: 1.25rem; z-index: 40; font: inherit; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; gap: .5rem; min-height: 48px;
   background: var(--ai); color: #fff; border: 0; border-radius: 999px; padding: .5rem 1.3rem;
   box-shadow: var(--shadow-2); transition: transform .15s var(--ease), box-shadow .15s var(--ease);
@@ -49,13 +49,14 @@ details > summary { cursor: pointer; }
 .assistant-toggle::before { content: "✦"; }
 .assistant-toggle:hover { box-shadow: var(--shadow-3); transform: translateY(-1px); }
 .assistant-panel {
-  position: fixed; bottom: 5.5rem; inset-inline-start: 1.25rem; z-index: 40; width: min(400px, calc(100vw - 2.5rem));
+  position: fixed; bottom: 5.5rem; inset-inline-end: 1.25rem; z-index: 40; width: min(400px, calc(100vw - 2.5rem));
   max-height: min(580px, calc(100vh - 7rem)); display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden;
   box-shadow: var(--shadow-3); animation: panel-in .2s var(--ease);
 }
 @keyframes panel-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 .assistant-panel[hidden] { display: none; }
+.panel-open .assistant-toggle, .panel-open .assistant-panel { display: none; }
 .assistant-panel > header {
   background: var(--ai-soft); color: var(--ai); padding: .75rem 1.1rem; display: flex; justify-content: space-between; align-items: center;
   border-bottom: 1px solid var(--ai-line);

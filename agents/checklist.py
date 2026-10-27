@@ -48,3 +48,29 @@ FIELDS = [
 
 ITEMS = ([{"key": k, "label": label, "hint": hint, "group": SECTION} for k, label, hint in SECTIONS]
          + [{"key": k, "label": label, "hint": hint, "group": FIELD} for k, label, hint in FIELDS])
+
+# فصل‌ها و بخش‌های لازم پایان‌نامه (قالب workflow/static/workflow/templates/thesis-template.docx)
+THESIS_SECTIONS = [
+    ("title", "عنوان پایان‌نامه",
+     "عنوان پایان‌نامه در ابتدای سند آمده باشد."),
+    ("abstract", "چکیده",
+     "بخشی با عنوان «چکیده» که خلاصه‌ی مسئله، روش و نتیجه را در یک یا دو بند می‌آورد."),
+    ("introduction", "فصل مقدمه",
+     "فصلی با عنوان «مقدمه» که مسئله، هدف و ساختار پایان‌نامه را شرح می‌دهد."),
+    ("related_work", "فصل مرور پیشینه / کارهای مرتبط",
+     "فصلی با عنوانی مانند «مرور پیشینه»، «کارهای مرتبط» یا «مفاهیم پایه»."),
+    ("method", "فصل روش / طراحی و پیاده‌سازی",
+     "فصلی با عنوانی مانند «روش»، «رویکرد پیشنهادی» یا «طراحی و پیاده‌سازی»."),
+    ("evaluation", "فصل ارزیابی و نتایج",
+     "فصلی با عنوانی مانند «ارزیابی» یا «نتایج» که نتیجه‌ی آزمایش‌ها را گزارش می‌کند."),
+    ("conclusion", "فصل جمع‌بندی و کارهای آینده",
+     "فصلی با عنوانی مانند «جمع‌بندی»، «نتیجه‌گیری» یا «کارهای آینده»."),
+    ("references", "مراجع",
+     "بخشی با عنوان «مراجع» یا «منابع» که دست‌کم یک مرجع در آن فهرست شده باشد."),
+]
+THESIS_ITEMS = [{"key": k, "label": label, "hint": hint, "group": SECTION} for k, label, hint in THESIS_SECTIONS]
+
+
+def items_for(kind):
+    """چک‌لیست قالب هر نوع سند (proposal / thesis)."""
+    return THESIS_ITEMS if kind == "thesis" else ITEMS

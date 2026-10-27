@@ -56,6 +56,9 @@ class ProjectCase(models.Model):
                                verbose_name="دانشجو / نویسنده")
     advisor = models.ForeignKey(User, null=True, blank=True, on_delete=models.PROTECT,
                                 related_name="advised_cases", verbose_name="استاد راهنما")
+    # استاد مشاور فقط نمایشی است (آموزش در پنل مدیریت ثبت می‌کند) و در گردش‌کار نقشی ندارد
+    co_advisor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name="co_advised_cases", verbose_name="استاد مشاور")
     department = models.ForeignKey(Department, null=True, blank=True, on_delete=models.PROTECT,
                                    verbose_name="گروه آموزشی")
     title_fa = models.CharField("عنوان فارسی", max_length=250)
@@ -198,6 +201,43 @@ class DocumentVersion(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} v{self.number}"
+
+
+class DocumentComment(models.Model):
+    """نظر استاد راهنما یا داور روی «یک بخش» از یک نسخه‌ی سند (در نمایشگر سند)."""
+    version = models.ForeignKey(DocumentVersion, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    section = models.PositiveSmallIntegerField("شماره‌ی بخش", default=0)
+    section_title = models.CharField("عنوان بخش", max_length=120, blank=True)
+    text = models.TextField("متن نظر")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["section", "created_at"]
+        verbose_name = "نظر روی سند"
+        verbose_name_plural = "نظرهای روی سند"
+
+    def __str__(self):
+        return f"{self.version} §{self.section}: {self.text[:40]}"
+
+
+class Signature(models.Model):
+    """امضای الکترونیک یک استاد هنگام تأیید یک نسخه‌ی سند؛ signed_file همان سند با تصویر امضاست."""
+    version = models.ForeignKey(DocumentVersion, on_delete=models.CASCADE, related_name="signatures")
+    signer = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    role = models.CharField(max_length=10, choices=CaseRole.choices)
+    image = models.FileField("تصویر امضا", upload_to="signatures/%Y/%m/")
+    signed_file = models.FileField("سند امضاشده", upload_to="signed/%Y/%m/", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        verbose_name = "امضای الکترونیک"
+        verbose_name_plural = "امضاهای الکترونیک"
+        constraints = [models.UniqueConstraint(fields=["version", "signer"], name="one_signature_per_signer")]
+
+    def __str__(self):
+        return f"{self.signer} ← {self.version}"
 
 
 class Review(models.Model):

@@ -9,7 +9,6 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_POST
 
 from workflow import services as wf
-from workflow.enums import DocKind
 from workflow.models import DocumentVersion
 
 from . import services
@@ -40,7 +39,7 @@ def assistant_ask(request):
 @require_POST
 def validation_retry(request, pk):
     _require_agents(request.user)
-    version = get_object_or_404(DocumentVersion, pk=pk, kind=DocKind.PROPOSAL)
+    version = get_object_or_404(DocumentVersion, pk=pk)
     if not wf.cases_for(request.user).filter(pk=version.case_id).exists():
         raise Http404
     if not services.can_retry_validation(version, request.user):
