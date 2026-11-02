@@ -6,6 +6,7 @@
 
 | سند | محتوا |
 |---|---|
+| [docs/system-guide-fa.md](docs/system-guide-fa.md) | **راهنمای جامع سامانه:** معماری، ماژول‌ها، اتصال n8n، عامل‌های هوش مصنوعی و پرامپت‌ها، همه‌ی فلوها، مدل داده، پرسش و پاسخ |
 | [docs/INSTALL.md](docs/INSTALL.md) | راهنمای کامل نصب و اجرا روی مک (همراه با Ollama) |
 | [docs/phase3.md](docs/phase3.md) | لایه‌ی عامل‌ها در n8n |
 | [docs/phase4.md](docs/phase4.md) | یکپارچه‌سازی، سناریوهای سرتاسری و حالت سایه |
