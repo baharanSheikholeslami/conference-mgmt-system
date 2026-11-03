@@ -1,0 +1,110 @@
+{% extends "workflow/base.html" %}
+{% load portal %}
+{% block title %}آماده‌سازی دفاع — {{ case.title_fa }}{% endblock %}
+{% block content %}
+<a class="crumb" href="{% url 'case_detail' case.pk %}">بازگشت به پرونده</a>
+
+<header class="case-hero defense-hero">
+  <div class="case-hero-top"><span class="agent-tag">هوش مصنوعی</span>
+    {% if prep %}<small class="muted">پایان‌نامه، نسخه‌ی {{ prep.version.number|fa }}{% if prep.finished_at %} — {{ prep.finished_at|jalali_datetime }}{% endif %}</small>{% endif %}
+  </div>
+  <h1>آماده‌سازی دفاع</h1>
+  <p class="muted">{{ case.title_fa }}</p>
+</header>
+
+{% if not prep %}
+  <section class="empty-state">
+    <h3>هنوز آماده‌سازی انجام نشده است</h3>
+    <p>سامانه پایان‌نامه و پیشنهاد شما را می‌خواند و پرسش‌های محتمل داوران و نقاط ضعف متن را، هرکدام با نقل‌قولی از خود متن، فهرست می‌کند.</p>
+    {% if can_start %}<form method="post" action="{% url 'defense_prep_start' case.pk %}">{% csrf_token %}<button class="btn" type="submit">آماده‌سازی دفاع</button></form>{% endif %}
+  </section>
+{% elif prep.is_waiting %}
+  <section class="empty-state" data-agent-waiting>
+    <h3>در حال خواندن پایان‌نامه…</h3>
+    <p>مدل زبانی متن را تکه‌به‌تکه می‌خواند؛ این کار ممکن است چند دقیقه طول بکشد. صفحه خودکار تازه می‌شود.</p>
+  </section>
+{% elif prep.status != "done" %}
+  <section class="card">
+    <p class="agent-warning">{% if prep.is_stale %}پاسخی از سرویس آماده‌سازی دفاع نرسید.{% else %}{{ prep.error|default:"آماده‌سازی انجام نشد." }}{% endif %}</p>
+    {% if can_start %}<form method="post" action="{% url 'defense_prep_start' case.pk %}">{% csrf_token %}<button class="btn" type="submit">تلاش دوباره</button></form>{% endif %}
+  </section>
+{% else %}
+  {% if card.outdated %}<p class="agent-warning">این فهرست برای نسخه‌ی {{ prep.version.number|fa }} است و پس از آن نسخه‌ی {{ card.thesis.number|fa }} را بارگذاری کرده‌اید؛ جلسه‌ی آزمایشی فقط روی آخرین نسخه باز است.</p>{% endif %}
+  {% if prep.error %}<p class="agent-warning">{{ prep.error }}</p>{% endif %}
+
+  {% if prep.weak_points %}
+  <section class="section" aria-labelledby="weak-title">
+    <h2 id="weak-title" class="section-title">نقاط ضعفی که داور ممکن است رویشان دست بگذارد</h2>
+    <ul class="weak-list">
+    {% for w in prep.weak_points %}
+      <li class="sev-{{ w.severity }}">
+        <div class="weak-head"><strong>{{ w.title }}</strong>
+          <span class="badge {% if w.severity == 'high' %}stopped{% elif w.severity == 'medium' %}wait{% else %}plain{% endif %}">{% for k, v in severities.items %}{% if k == w.severity %}{{ v }}{% endif %}{% endfor %}</span></div>
+        {% if w.detail %}<p>{{ w.detail }}</p>{% endif %}
+        {% if w.suggestion %}<p class="suggest"><span>پیشنهاد:</span> {{ w.suggestion }}</p>{% endif %}
+        {% include "agents/_evidence.html" with item=w %}
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <section class="section" aria-labelledby="questions-title">
+    <h2 id="questions-title" class="section-title">پرسش‌های محتمل و جلسه‌ی دفاع آزمایشی</h2>
+    <p class="muted">برای تمرین، پرسش را باز کنید و پاسخ خود را همان‌طور که در جلسه می‌گویید بنویسید. سامانه پاسخ را با متن پایان‌نامه مقایسه می‌کند، می‌گوید چه چیزی جا افتاده و مثل یک داور پرسش تکمیلی می‌پرسد.</p>
+    {% for group in groups %}
+      <h3 class="q-group">{{ group.label }}</h3>
+      {% for q in group.questions %}
+        <details class="agent-box q-box" id="{{ q.id }}"{% if q.answers %} open{% endif %}>
+          <summary><span class="q-text">{{ q.question }}</span>{% if q.answers %}<span class="pill">{{ q.answers|length|fa }} تمرین</span>{% endif %}</summary>
+          {% if q.why %}<p class="q-why"><span>چرا این پرسش:</span> {{ q.why }}</p>{% endif %}
+          {% include "agents/_evidence.html" with item=q %}
+          {% for a in q.answers %}
+            <div class="turn">
+              {% if a.follow_up_of %}<p class="turn-q">پرسش تکمیلی: {{ a.question }}</p>{% endif %}
+              <p class="turn-a"><span>پاسخ شما:</span> {{ a.answer }}</p>
+              {% if a.is_waiting %}<p class="badge wait" data-agent-waiting>در حال ارزیابی پاسخ…</p>
+              {% elif a.status == "done" %}
+                <div class="turn-fb verdict-{{ a.verdict|default:'none' }}">
+                  {% if a.verdict %}<span class="badge {% if a.verdict == 'strong' %}done{% elif a.verdict == 'partial' %}wait{% else %}stopped{% endif %}">{{ a.get_verdict_display }}</span>{% endif %}
+                  <p>{{ a.feedback }}</p>
+                  {% if a.missing %}<p class="muted">نکته‌هایی که بهتر است بگویید:</p><ul>{% for m in a.missing %}<li>{{ m }}</li>{% endfor %}</ul>{% endif %}
+                  {% if a.follow_up %}
+                    <p class="turn-follow"><span>داور می‌پرسد:</span> {{ a.follow_up }}</p>
+                    {% if can_practice and forloop.last %}
+                      <form method="post" action="{% url 'defense_mock_answer' prep.pk %}" class="answer-form">{% csrf_token %}
+                        <input type="hidden" name="question_id" value="{{ q.id }}"><input type="hidden" name="follow_up_of" value="{{ a.pk }}">
+                        <label class="visually-hidden" for="fu-{{ a.pk }}">پاسخ به پرسش تکمیلی</label>
+                        <textarea id="fu-{{ a.pk }}" name="answer" rows="3" minlength="{{ min_answer }}" maxlength="{{ max_answer }}" required placeholder="پاسخ به پرسش تکمیلی…"></textarea>
+                        <button class="btn small" type="submit">ارسال پاسخ</button>
+                      </form>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              {% else %}<p class="agent-warning">{% if a.is_stale %}پاسخی از سرویس جلسه‌ی آزمایشی نرسید.{% else %}{{ a.error|default:"ارزیابی انجام نشد." }}{% endif %}</p>{% endif %}
+            </div>
+          {% endfor %}
+          {% if can_practice %}
+            <form method="post" action="{% url 'defense_mock_answer' prep.pk %}" class="answer-form">{% csrf_token %}
+              <input type="hidden" name="question_id" value="{{ q.id }}">
+              <label class="visually-hidden" for="ans-{{ q.id }}">پاسخ شما</label>
+              <textarea id="ans-{{ q.id }}" name="answer" rows="3" minlength="{{ min_answer }}" maxlength="{{ max_answer }}" required placeholder="{% if q.answers %}یک پاسخ تازه بنویسید…{% else %}پاسخ خود را بنویسید…{% endif %}"></textarea>
+              <button class="btn {% if q.answers %}secondary {% endif %}small" type="submit">{% if q.answers %}تمرین دوباره{% else %}ارسال پاسخ{% endif %}</button>
+            </form>
+          {% endif %}
+        </details>
+      {% endfor %}
+    {% empty %}<p class="empty">پرسشی پیدا نشد.</p>
+    {% endfor %}
+  </section>
+
+  {% if can_start %}
+  <form method="post" action="{% url 'defense_prep_start' case.pk %}" class="regen">{% csrf_token %}
+    <button class="btn secondary small" type="submit">از نو بخوان و پرسش تازه بساز</button>
+    <small class="muted">تمرین‌های فعلی پاک می‌شوند.</small>
+  </form>
+  {% endif %}
+{% endif %}
+
+<p class="agent-note">این پرسش‌ها و ارزیابی‌ها را یک مدل زبانی ساخته است و ممکن است خطا کند؛ فقط برای تمرین شماست، در پرونده ثبت نمی‌شود و استاد راهنما و داوران آن را نمی‌بینند. هر مورد که نقل‌قولش در متن پیدا نشده، با برچسب «شاهد پیدا نشد» آمده است.</p>
+{% endblock %}

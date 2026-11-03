@@ -1,0 +1,22 @@
+{% load portal %}{% if show %}
+<section class="card agent-panel defense-card" aria-labelledby="defense-card-title">
+  <div class="card-head">
+    <h2 id="defense-card-title">آماده‌سازی دفاع <span class="agent-tag">هوش مصنوعی</span></h2>
+    {% if not prep %}<span class="badge plain">هنوز انجام نشده</span>
+    {% elif prep.is_waiting %}<span class="badge wait" data-agent-waiting>در حال خواندن پایان‌نامه…</span>
+    {% elif prep.is_stale %}<span class="badge stopped">بی‌پاسخ ماند</span>
+    {% elif prep.status == "done" %}<span class="badge done">{{ prep.questions|length|fa }} پرسش، {{ prep.weak_points|length|fa }} نقطه‌ی ضعف</span>
+    {% else %}<span class="badge stopped">انجام نشد</span>{% endif %}
+  </div>
+  <p>سامانه پایان‌نامه‌ی شما را می‌خواند، پرسش‌هایی را که داوران احتمالاً در جلسه‌ی دفاع می‌پرسند و نقاط ضعف متن را پیدا می‌کند، و می‌توانید به همان پرسش‌ها تمرینی پاسخ دهید و بازخورد بگیرید. این صفحه را فقط خود شما می‌بینید.</p>
+  {% if outdated %}<p class="agent-warning">پس از آخرین آماده‌سازی، نسخه‌ی تازه‌ای از پایان‌نامه بارگذاری کرده‌اید.</p>{% endif %}
+  <div class="actions">
+    {% if prep %}<a class="btn" href="{% url 'defense_prep' case.pk %}">{% if prep.status == "done" %}دیدن پرسش‌ها و جلسه‌ی آزمایشی{% else %}صفحه‌ی آماده‌سازی دفاع{% endif %}</a>{% endif %}
+    {% if not prep or outdated %}
+      <form method="post" action="{% url 'defense_prep_start' case.pk %}">{% csrf_token %}
+        <button class="btn{% if prep %} secondary{% endif %}" type="submit">{% if prep %}آماده‌سازی برای نسخه‌ی {{ thesis.number|fa }}{% else %}آماده‌سازی دفاع{% endif %}</button>
+      </form>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

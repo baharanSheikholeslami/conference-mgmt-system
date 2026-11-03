@@ -230,3 +230,73 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} → {self.recipient}: {self.subject[:50]}"
+
+
+# ───────────────────────── ۵. آماده‌سازی دفاع ─────────────────────────
+
+class DefensePrep(_AgentRun):
+    """
+    پرسش‌های محتمل داوران و نقاط ضعف یک نسخه‌ی پایان‌نامه، فقط برای خود دانشجو.
+    هر مورد نقل‌قولی از متن دارد که پورتال آن را در متن واقعی راستی‌آزمایی کرده است (verified).
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "در حال آماده‌سازی"
+        DONE = "done", "آماده"
+        ERROR = "error", "انجام نشد"
+
+    version = models.OneToOneField(DocumentVersion, on_delete=models.CASCADE, related_name="defense_prep",
+                                   verbose_name="نسخه‌ی پایان‌نامه")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    # [{"id", "category", "question", "why", "evidence", "source", "verified", "anchor"}]
+    questions = models.JSONField("پرسش‌های محتمل", default=list, blank=True)
+    # [{"title", "detail", "suggestion", "severity", "evidence", "source", "verified"}]
+    weak_points = models.JSONField("نقاط ضعف", default=list, blank=True)
+
+    class Meta:
+        verbose_name = "آماده‌سازی دفاع"
+        verbose_name_plural = "آماده‌سازی‌های دفاع"
+
+    def __str__(self):
+        return f"{self.version} — {self.get_status_display()}"
+
+    @property
+    def case(self):
+        return self.version.case
+
+    def question(self, qid):
+        return next((q for q in self.questions if q.get("id") == qid), None)
+
+
+class MockAnswer(_AgentRun):
+    """یک نوبت از جلسه‌ی دفاع آزمایشی: پاسخ دانشجو به یک پرسش و بازخورد مدل زبانی به آن."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "در حال ارزیابی"
+        DONE = "done", "ارزیابی شد"
+        ERROR = "error", "انجام نشد"
+
+    class Verdict(models.TextChoices):
+        STRONG = "strong", "پاسخ قوی"
+        PARTIAL = "partial", "پاسخ ناقص"
+        WEAK = "weak", "پاسخ ضعیف"
+
+    prep = models.ForeignKey(DefensePrep, on_delete=models.CASCADE, related_name="answers")
+    question_id = models.CharField("شناسه‌ی پرسش", max_length=20)
+    question = models.TextField("پرسش")
+    follow_up_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE,
+                                     related_name="follow_ups", verbose_name="پرسش تکمیلیِ")
+    answer = models.TextField("پاسخ دانشجو")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    verdict = models.CharField("ارزیابی", max_length=10, choices=Verdict.choices, blank=True)
+    feedback = models.TextField("بازخورد", blank=True)
+    missing = models.JSONField("نکته‌های جاافتاده", default=list, blank=True)
+    follow_up = models.TextField("پرسش تکمیلی داور", blank=True)
+
+    class Meta:
+        ordering = ["requested_at", "id"]
+        verbose_name = "پاسخ تمرینی دفاع"
+        verbose_name_plural = "پاسخ‌های تمرینی دفاع"
+
+    def __str__(self):
+        return f"{self.prep.version} — {self.question[:40]}"

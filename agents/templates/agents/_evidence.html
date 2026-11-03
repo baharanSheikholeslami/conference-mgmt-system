@@ -1,0 +1,4 @@
+{% if item.evidence %}<blockquote class="evidence{% if not item.verified %} unverified{% endif %}">
+  <small>{% if item.source == "proposal" %}از پیشنهاد پروژه{% elif item.verified %}از متن پایان‌نامه{% else %}شاهد در متن پیدا نشد؛ با احتیاط بخوانید{% endif %}</small>
+  «{{ item.evidence }}»
+</blockquote>{% endif %}

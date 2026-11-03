@@ -30,9 +30,9 @@ from workflow.jalali import fa_digits, to_jalali
 from workflow.models import (CaseEvent, Deadline, DocumentVersion, ProjectCase, RefereeAssignment,
                              User)
 
-from . import checklist, chunking, extract, n8n
-from .models import (AssistantMessage, DocumentValidation, Notification, PolicyChunk,
-                     RefereeSuggestion, SuggestionRun)
+from . import checklist, chunking, defense, extract, n8n
+from .models import (AssistantMessage, DefensePrep, DocumentValidation, MockAnswer, Notification,
+                     PolicyChunk, RefereeSuggestion, SuggestionRun)
 
 log = logging.getLogger("agents")
 
@@ -595,6 +595,242 @@ def visible_notifications(case, user):
     if user.is_superuser or user.user_type == UserType.EDU_STAFF:
         return notifications
     return notifications.filter(recipient=user)
+
+
+# ───────────────────────── ۵. عامل آماده‌سازی دفاع ─────────────────────────
+# دانشجو پس از بارگذاری پایان‌نامه از سامانه می‌خواهد پرسش‌های محتمل داوران و نقاط ضعف متن را
+# پیدا کند و سپس به همان پرسش‌ها «تمرینی» پاسخ می‌دهد. خروجی فقط برای خود دانشجوست (نه راهنما،
+# نه داور) و هیچ اثری بر پرونده ندارد. هر دو کار ناهم‌زمان‌اند: n8n نتیجه را به result_path برمی‌گرداند.
+
+PROPOSAL_EXCERPT_CHARS = 6000
+DEFENSE_STATES = {State.IN_PROGRESS, State.THESIS_ADVISOR_REVIEW, State.THESIS_SUBMITTED,
+                  State.DEFENSE_SCHEDULED}
+
+
+def _is_edu(user):
+    return user.is_superuser or user.user_type == UserType.EDU_STAFF
+
+
+def defense_prep_visible_to(user, case):
+    """فقط نویسنده؛ در حالت سایه فقط آموزش دانشکده و مدیر سامانه (برای مقایسه، نه برای دانشجو)."""
+    if not visible_to(user):
+        return False
+    return _is_edu(user) if shadow() else user.id == case.author_id
+
+
+def defense_thesis(case):
+    """نسخه‌ای که آماده‌سازی دفاع روی آن انجام می‌شود: آخرین نسخه‌ی پایان‌نامه، در مراحل پس از تصویب."""
+    if case.state not in DEFENSE_STATES:
+        return None
+    return wf.latest_version(case, DocKind.THESIS)
+
+
+def can_request_defense_prep(case, user):
+    return defense_prep_visible_to(user, case) and defense_thesis(case) is not None
+
+
+def can_practice(prep, user):
+    """جلسه‌ی آزمایشی فقط برای خود دانشجو و فقط روی آخرین نسخه‌ی پایان‌نامه."""
+    case = prep.version.case
+    return (user.id == case.author_id and defense_prep_visible_to(user, case)
+            and prep.status == DefensePrep.Status.DONE
+            and (thesis := defense_thesis(case)) is not None and thesis.pk == prep.version_id)
+
+
+def _text_of(version):
+    try:
+        return extract.extract_text(version.file)
+    except extract.ExtractionError:
+        return ""
+
+
+def proposal_excerpt(case):
+    """هدف‌ها و روش وعده‌داده‌شده در پیشنهاد (از «مقدمه» به بعد) برای سنجش فاصله‌ی پیشنهاد و پایان‌نامه."""
+    version = wf.latest_version(case, DocKind.PROPOSAL)
+    text = _text_of(version) if version else ""
+    intro = _INTRO_HEADING.search(text)
+    return text[intro.end() if intro else 0:][:PROPOSAL_EXCERPT_CHARS].strip()
+
+
+def request_defense_prep(case):
+    """پرسش‌های محتمل و نقاط ضعف آخرین نسخه‌ی پایان‌نامه را از n8n می‌خواهد (گردش‌کار defense-prep)."""
+    version = defense_thesis(case)
+    if version is None:
+        raise AgentError("آماده‌سازی دفاع پس از بارگذاری پایان‌نامه ممکن است.")
+    prep = _restart(DefensePrep, extra={"questions": [], "weak_points": []}, version=version)
+    prep.answers.all().delete()          # شناسه‌ی پرسش‌ها عوض می‌شود؛ تمرین‌های قبلی دیگر معنا ندارند
+    text = _text_of(version)
+    if len(text) < MIN_DOC_CHARS:
+        return _finish(prep, error="متن قابل‌خواندنی در فایل پایان‌نامه پیدا نشد (شاید PDF اسکن‌شده "
+                                   "باشد)؛ آماده‌سازی خودکار دفاع ممکن نیست.")
+    payload = {
+        "prep_id": prep.pk,
+        "result_path": reverse("api_defense_prep_result", args=[prep.pk]),
+        "case": {"id": case.pk, "title_fa": case.title_fa, "title_en": case.title_en},
+        "thesis": {"version": version.number, "chars": len(text), "truncated": len(text) > MAX_DOC_CHARS,
+                   "text": text[:MAX_DOC_CHARS]},
+        "proposal": {"excerpt": proposal_excerpt(case)},
+        "categories": defense.categories_payload(),
+        "max_questions": defense.MAX_QUESTIONS,
+        "max_weak_points": defense.MAX_WEAK_POINTS,
+    }
+    try:
+        n8n.post("defense-prep", payload)
+    except n8n.Unavailable as e:
+        log.warning("defense-prep: %s", e)
+        return _finish(prep, error="سرویس آماده‌سازی دفاع در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
+    return prep
+
+
+def _locate(evidence, thesis_index, proposal_index):
+    """نقل‌قول را اول در پایان‌نامه و سپس در پیشنهاد می‌جوید: (منبع، جای آن در پایان‌نامه)."""
+    if not evidence:
+        return "", None
+    at = defense.find_quote(None, evidence, thesis_index)
+    if at is not None:
+        return "thesis", at
+    if proposal_index[0] and defense.find_quote(None, evidence, proposal_index) is not None:
+        return "proposal", None
+    return "", None
+
+
+def save_defense_prep(prep, data):
+    """
+    پاسخ n8n: {"questions": [{"category", "question", "why", "evidence"}],
+               "weak_points": [{"title", "detail", "suggestion", "severity", "evidence"}],
+               "windows": n, "failed_windows": k, "model": "..."}  یا  {"error": "...", "detail": "..."}
+    پورتال همه‌چیز را خودش پالایش می‌کند: دسته‌ی ناشناخته ← «پرسش کلی»، تکراری‌ها حذف، طول‌ها و
+    تعدادها محدود، و نقل‌قول هر مورد در متن واقعی پایان‌نامه (یا پیشنهاد) راستی‌آزمایی می‌شود.
+    """
+    model = str(data.get("model") or "")
+    if data.get("error"):
+        log.warning("defense-prep %s: %s — %s", prep.pk, data["error"], data.get("detail", ""))
+        return _finish(prep, error=str(data["error"]), model=model)
+    thesis_index = defense.normalize_with_map(_text_of(prep.version))
+    proposal_index = defense.normalize_with_map(proposal_excerpt(prep.version.case))
+
+    questions, seen = [], set()
+    for row in data.get("questions") or []:
+        if not isinstance(row, dict):
+            continue
+        text = defense.clean_text(row.get("question"), defense.MAX_QUESTION_CHARS)
+        key = defense.normalize(text)
+        if len(key) < 10 or key in seen:
+            continue
+        seen.add(key)
+        category = row.get("category") if row.get("category") in defense.CATEGORY_KEYS else defense.GENERAL
+        evidence = defense.clean_text(row.get("evidence"), defense.MAX_QUOTE_CHARS)
+        source, anchor = _locate(evidence, thesis_index, proposal_index)
+        questions.append({"category": category, "question": text,
+                          "why": defense.clean_text(row.get("why"), defense.MAX_TEXT_CHARS),
+                          "evidence": evidence, "source": source, "verified": bool(source),
+                          "anchor": anchor})
+    order = {k: i for i, k in enumerate(defense.CATEGORY_KEYS + [defense.GENERAL])}
+    questions.sort(key=lambda q: (not q["verified"], order[q["category"]]))
+    questions = questions[:defense.MAX_QUESTIONS]
+    questions.sort(key=lambda q: order[q["category"]])
+    for n, q in enumerate(questions, 1):
+        q["id"] = f"q{n}"
+
+    weak_points, seen = [], set()
+    for row in data.get("weak_points") or []:
+        if not isinstance(row, dict):
+            continue
+        title = defense.clean_text(row.get("title"), 200)
+        if len(title) < 4 or defense.normalize(title) in seen:
+            continue
+        seen.add(defense.normalize(title))
+        evidence = defense.clean_text(row.get("evidence"), defense.MAX_QUOTE_CHARS)
+        source, _ = _locate(evidence, thesis_index, proposal_index)
+        severity = row.get("severity") if row.get("severity") in defense.SEVERITIES else "medium"
+        weak_points.append({"title": title, "severity": severity,
+                            "detail": defense.clean_text(row.get("detail"), defense.MAX_TEXT_CHARS),
+                            "suggestion": defense.clean_text(row.get("suggestion"), defense.MAX_TEXT_CHARS),
+                            "evidence": evidence, "source": source, "verified": bool(source)})
+    rank = list(defense.SEVERITIES)
+    weak_points.sort(key=lambda w: (not w["verified"], rank.index(w["severity"])))
+    weak_points = weak_points[:defense.MAX_WEAK_POINTS]
+
+    if not questions and not weak_points:
+        return _finish(prep, error="مدل زبانی پرسش یا نکته‌ی قابل‌استفاده‌ای برنگرداند؛ دوباره تلاش کنید.",
+                       model=model)
+    prep.questions, prep.weak_points = questions, weak_points
+    failed, total = data.get("failed_windows") or 0, data.get("windows") or 0
+    warning = (f"بررسی {fa_digits(failed)} تکه از {fa_digits(total)} تکه‌ی پایان‌نامه ناموفق بود؛ "
+               "ممکن است بخشی از متن پوشش داده نشده باشد.") if failed else ""
+    return _finish(prep, status=DefensePrep.Status.DONE, error=warning, model=model)
+
+
+def request_mock_feedback(prep, question_id, answer, follow_up_of=None):
+    """
+    یک نوبت جلسه‌ی آزمایشی: پاسخ دانشجو به پرسش question_id (یا به پرسش تکمیلیِ پاسخ follow_up_of)
+    همراه با تکه‌ای از پایان‌نامه که پرسش از آن آمده، برای ارزیابی به گردش‌کار defense-mock می‌رود.
+    """
+    question = prep.question(question_id)
+    if question is None:
+        raise AgentError("این پرسش در فهرست آماده‌سازی دفاع نیست.")
+    answer = " ".join((answer or "").split())
+    if len(answer) < defense.MIN_ANSWER_CHARS:
+        raise AgentError("پاسخ خود را دست‌کم در یکی دو جمله بنویسید.")
+    if len(answer) > defense.MAX_ANSWER_CHARS:
+        raise AgentError(f"پاسخ باید کوتاه‌تر از {fa_digits(defense.MAX_ANSWER_CHARS)} نویسه باشد.")
+    if any(a.is_waiting for a in prep.answers.filter(status=MockAnswer.Status.PENDING)):
+        raise AgentError("ارزیابی پاسخ قبلی هنوز تمام نشده است؛ چند لحظه صبر کنید.")
+    asked = question["question"]
+    if follow_up_of is not None:
+        if follow_up_of.prep_id != prep.pk or follow_up_of.question_id != question_id or not follow_up_of.follow_up:
+            raise AgentError("پرسش تکمیلی نامعتبر است.")
+        asked = follow_up_of.follow_up
+    mock = MockAnswer.objects.create(prep=prep, question_id=question_id, question=asked,
+                                     follow_up_of=follow_up_of, answer=answer)
+    text = _text_of(prep.version)
+    previous = [{"question": a.question, "answer": a.answer, "feedback": a.feedback}
+                for a in prep.answers.filter(question_id=question_id, status=MockAnswer.Status.DONE)
+                .exclude(pk=mock.pk).order_by("-requested_at")[:2]]
+    payload = {
+        "answer_id": mock.pk,
+        "result_path": reverse("api_defense_mock_result", args=[mock.pk]),
+        "case": {"title_fa": prep.version.case.title_fa, "title_en": prep.version.case.title_en},
+        "question": asked,
+        "category": defense.CATEGORY_LABELS.get(question["category"], ""),
+        "why": question.get("why", ""),
+        "thesis_excerpt": defense.context_around(text, question.get("anchor")),
+        "previous_turns": previous,
+        "answer": answer,
+    }
+    try:
+        n8n.post("defense-mock", payload)
+    except n8n.Unavailable as e:
+        log.warning("defense-mock: %s", e)
+        return _finish(mock, error="سرویس جلسه‌ی آزمایشی در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
+    return mock
+
+
+def save_mock_feedback(mock, data):
+    """پاسخ n8n: {"verdict": "strong|partial|weak", "feedback", "missing": [...], "follow_up", "model"} یا {"error"}."""
+    model = str(data.get("model") or "")
+    if data.get("error"):
+        log.warning("defense-mock %s: %s — %s", mock.pk, data["error"], data.get("detail", ""))
+        return _finish(mock, error=str(data["error"]), model=model)
+    feedback = str(data.get("feedback") or "").strip()[:2000]
+    if not feedback:
+        return _finish(mock, error="مدل زبانی بازخوردی ننوشت؛ دوباره تلاش کنید.", model=model)
+    mock.verdict = data.get("verdict") if data.get("verdict") in MockAnswer.Verdict.values else ""
+    mock.feedback = feedback
+    mock.missing = [defense.clean_text(m, 300) for m in (data.get("missing") or [])
+                    if isinstance(m, str) and m.strip()][:5]
+    mock.follow_up = defense.clean_text(data.get("follow_up"), defense.MAX_QUESTION_CHARS)
+    return _finish(mock, status=MockAnswer.Status.DONE, model=model)
+
+
+def defense_card(case, user):
+    """داده‌ی کارت «آماده‌سازی دفاع» در صفحه‌ی پرونده (یا None اگر نمایش داده نشود)."""
+    if not can_request_defense_prep(case, user):
+        return None
+    thesis = defense_thesis(case)
+    prep = DefensePrep.objects.filter(version__case=case).order_by("-version__number").first()
+    return {"case": case, "prep": prep, "thesis": thesis,
+            "outdated": prep is not None and prep.version_id != thesis.pk}
 
 
 # ───────────────────────── اتصال به رویدادهای پرونده ─────────────────────────

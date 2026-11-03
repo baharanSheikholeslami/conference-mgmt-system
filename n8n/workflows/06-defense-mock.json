@@ -1,0 +1,181 @@
+{
+  "id": "pm5DefenseMock006",
+  "name": "فاز ۳ — ۵ب. جلسه‌ی دفاع آزمایشی (ارزیابی پاسخ)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## جلسه‌ی دفاع آزمایشی\nدانشجو به یکی از پرسش‌ها پاسخ می‌دهد و پورتال پرسش، پاسخ و تکه‌ای از پایان‌نامه را که پرسش از آن آمده به `POST /webhook/defense-mock` می‌فرستد.\n\nمدل زبانی پاسخ را ارزیابی می‌کند (قوی/ناقص/ضعیف)، نکته‌های جاافتاده را می‌گوید و یک پرسش تکمیلی مثل داور واقعی می‌پرسد. نتیجه به پورتال برمی‌گردد.",
+        "height": 280,
+        "width": 640
+      },
+      "id": "5bea0fbe-debe-5558-b02c-bad9ebb68f84",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "defense-mock",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "cf0ab053-b873-55f8-9b97-109a2095eef9",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0f97e119-751d-518f-aba2-06383f7938f3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و ساختن پرامپت «داور جلسه‌ی دفاع آزمایشی».\n// مدل پاسخ دانشجو را فقط با تکه‌ای از پایان‌نامه که پرسش از آن آمده مقایسه می‌کند.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst b = req.body || {};\nconst history = (Array.isArray(b.previous_turns) ? b.previous_turns : [])\n  .map((t) => `پرسش: ${t.question}\\nپاسخ پیشین دانشجو: ${t.answer}\\nبازخورد: ${t.feedback}`)\n  .join('\\n\\n');\nconst system = [\n  'تو داور جلسه‌ی دفاع آزمایشی پروژه‌ی کارشناسی مهندسی کامپیوتر هستی و پاسخ دانشجو را ارزیابی می‌کنی تا برای جلسه‌ی واقعی آماده شود.',\n  'قواعد:',\n  '۱. پاسخ را فقط با «تکه‌ی پایان‌نامه» و دانش عمومی رشته بسنج؛ چیزی به پایان‌نامه نسبت نده که در تکه نیامده است.',\n  '۲. verdict یکی از strong (کامل، دقیق و مستند)، partial (درست ولی ناقص یا کلی)، weak (نادرست، مبهم یا بی‌ربط) باشد.',\n  '۳. feedback دو تا چهار جمله‌ی سازنده و مشخص به فارسی و خطاب به دانشجو باشد.',\n  '۴. missing حداکثر سه نکته‌ی مشخص است که بهتر بود در پاسخ می‌آمد (اگر پاسخ کامل است خالی بگذار).',\n  '۵. follow_up یک پرسش تکمیلی کوتاه است که داور واقعی پس از شنیدن این پاسخ می‌پرسد.',\n  'خروجی فقط یک شیء JSON با همین شکل:',\n  '{\"verdict\": \"partial\", \"feedback\": \"...\", \"missing\": [\"...\"], \"follow_up\": \"...\"}',\n].join('\\n');\nreturn [{\n  json: {\n    result_path: b.result_path,\n    llm_request: {\n      model: $env.LLM_CHAT_MODEL,\n      temperature: 0.2,\n      stream: false,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: system },\n        {\n          role: 'user',\n          content:\n            `عنوان پروژه: ${(b.case || {}).title_fa || ''}\\nدسته‌ی پرسش: ${b.category || ''}\\n` +\n            `چرا این پرسش مهم است: ${b.why || ''}\\n\\n` +\n            `تکه‌ی پایان‌نامه:\\n\"\"\"\\n${String(b.thesis_excerpt || '').slice(0, 3000)}\\n\"\"\"\\n\\n` +\n            (history ? `نوبت‌های پیشین همین پرسش:\\n${history}\\n\\n` : '') +\n            `پرسش داور: ${b.question || ''}\\n\\nپاسخ دانشجو:\\n\"\"\"\\n${b.answer || ''}\\n\"\"\"`,\n        },\n      ],\n    },\n  },\n}];"
+      },
+      "id": "a86ac807-6f54-551d-a55f-a7d25fb9ec08",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "d13b5f6d-dc13-5132-8fb4-304d4a741641",
+      "name": "LLM Assess Answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — خواندن خروجی مدل. هر چیز نامعتبر به «خطای عامل» تبدیل می‌شود، نه به بازخورد ساختگی.\nconst path = $('Build Prompt').first().json.result_path;\nconst model = $env.LLM_CHAT_MODEL;\nconst res = $input.first().json || {};\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\nlet result;\ntry {\n  if (!content) throw new Error((res.error && (res.error.message || JSON.stringify(res.error))) || 'پاسخ خالی از مدل');\n  const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n  const parsed = JSON.parse(clean.slice(clean.indexOf('{'), clean.lastIndexOf('}') + 1));\n  result = {\n    verdict: String(parsed.verdict || '').toLowerCase().trim(),\n    feedback: String(parsed.feedback || ''),\n    missing: Array.isArray(parsed.missing) ? parsed.missing.map(String) : [],\n    follow_up: String(parsed.follow_up || ''),\n    model,\n  };\n} catch (e) {\n  result = { error: 'مدل زبانی بازخورد قابل‌استفاده‌ای نداد.', detail: String(e.message || e).slice(0, 300), model };\n}\nreturn [{ json: { result_path: path, result } }];"
+      },
+      "id": "90e4a8a9-c558-5b13-b412-7832c2eb7da2",
+      "name": "Parse Feedback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}{{ $json.result_path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "52cf581a-6199-50b6-af42-8c08df277013",
+      "name": "Send Result To Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Assess Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Assess Answer": {
+      "main": [
+        [
+          {
+            "node": "Parse Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Feedback": {
+      "main": [
+        [
+          {
+            "node": "Send Result To Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

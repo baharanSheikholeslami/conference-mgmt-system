@@ -1,7 +1,7 @@
 from django.contrib import admin
 
-from .models import (AssistantMessage, DocumentValidation, Notification, PolicyChunk,
-                     RefereeSuggestion, SuggestionRun)
+from .models import (AssistantMessage, DefensePrep, DocumentValidation, MockAnswer, Notification,
+                     PolicyChunk, RefereeSuggestion, SuggestionRun)
 
 
 @admin.register(DocumentValidation)
@@ -42,3 +42,17 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ("subject", "recipient", "kind", "stage", "status", "generated_by", "created_at")
     list_filter = ("kind", "status", "generated_by")
     search_fields = ("subject", "body", "recipient__username")
+
+
+class MockAnswerInline(admin.StackedInline):
+    model = MockAnswer
+    extra = 0
+    fk_name = "prep"
+    exclude = ("follow_up_of",)
+
+
+@admin.register(DefensePrep)
+class DefensePrepAdmin(admin.ModelAdmin):
+    list_display = ("version", "status", "model", "requested_at", "finished_at")
+    list_filter = ("status",)
+    inlines = [MockAnswerInline]
