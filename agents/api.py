@@ -16,7 +16,7 @@ from django.utils.crypto import constant_time_compare
 from django.views.decorators.csrf import csrf_exempt
 
 from . import services
-from .models import DocumentValidation, SuggestionRun
+from .models import DefensePrep, DocumentValidation, MockAnswer, SuggestionRun
 from .n8n import TOKEN_HEADER
 
 
@@ -82,3 +82,15 @@ def reminders_due(request, data):
 def notification_record(request, data):
     notification = services.record_notification(data)
     return {"id": notification.pk, "status": notification.status}
+
+
+@agent_api("POST")
+def defense_prep_result(request, data, pk):
+    prep = services.save_defense_prep(get_object_or_404(DefensePrep, pk=pk), data)
+    return {"status": prep.status, "questions": len(prep.questions), "weak_points": len(prep.weak_points)}
+
+
+@agent_api("POST")
+def defense_mock_result(request, data, pk):
+    mock = services.save_mock_feedback(get_object_or_404(MockAnswer, pk=pk), data)
+    return {"status": mock.status, "verdict": mock.verdict}

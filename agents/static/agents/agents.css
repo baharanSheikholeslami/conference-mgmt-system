@@ -86,3 +86,31 @@ details > summary { cursor: pointer; }
 @media (max-width: 640px) {
   .assistant-panel { inset-inline: .75rem; width: auto; bottom: 5rem; }
 }
+
+/* آماده‌سازی دفاع */
+.defense-card p { color: var(--ink-2); }
+.weak-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.weak-list li { background: var(--surface); border: 1px solid var(--line); border-inline-start: 4px solid var(--line-strong); border-radius: var(--radius-sm); padding: .75rem 1rem; }
+.weak-list li.sev-high { border-inline-start-color: var(--danger); }
+.weak-list li.sev-medium { border-inline-start-color: var(--warn); }
+.weak-head { display: flex; justify-content: space-between; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.weak-list p { margin: .35rem 0 0; color: var(--ink-2); font-size: .93rem; }
+.suggest span, .q-why span, .turn-a span, .turn-follow span { font-weight: 600; color: var(--ink); }
+.q-group { margin: 1.2rem 0 .5rem; color: var(--ai); }
+.q-box { margin-bottom: .5rem; }
+.q-box > summary .q-text { font-weight: 600; flex: 1; }
+.q-why { margin: .6rem 0 0; font-size: .92rem; color: var(--ink-2); }
+blockquote.evidence { margin: .55rem 0; padding: .45rem .8rem; background: var(--surface); border-inline-start: 3px solid var(--ai-line); border-radius: var(--radius-sm); font-size: .9rem; color: var(--ink-2); }
+blockquote.evidence small { display: block; color: var(--muted); font-size: .78rem; }
+blockquote.evidence.unverified { border-inline-start-color: var(--warn-line); background: var(--warn-soft); }
+blockquote.evidence.unverified small { color: var(--warn); }
+.turn { border-top: 1px solid var(--ai-line); margin-top: .7rem; padding-top: .6rem; }
+.turn p { margin: .25rem 0; font-size: .93rem; }
+.turn-q { font-weight: 600; }
+.turn-fb { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .55rem .85rem; margin-top: .4rem; }
+.turn-fb ul { margin: .2rem 0 .3rem; padding-inline-start: 1.2rem; font-size: .92rem; }
+.turn-follow { color: var(--ai); }
+.answer-form { display: grid; gap: .45rem; margin-top: .7rem; }
+.answer-form textarea { width: 100%; font: inherit; padding: .55rem .75rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); resize: vertical; }
+.answer-form .btn { justify-self: start; }
+.regen { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }

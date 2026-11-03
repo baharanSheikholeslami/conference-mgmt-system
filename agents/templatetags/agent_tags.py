@@ -41,3 +41,10 @@ def assistant_widget(context):
     user = getattr(context.get("request"), "user", None)
     return {"show": user is not None and user.is_authenticated and services.visible_to(user),
             "csrf_token": context.get("csrf_token")}
+
+
+@register.inclusion_tag("agents/_defense_card.html", takes_context=True)
+def defense_prep_card(context, case):
+    """کارت «آماده‌سازی دفاع» در صفحه‌ی پرونده؛ فقط برای دانشجو و فقط پس از بارگذاری پایان‌نامه."""
+    card = services.defense_card(case, context["request"].user)
+    return {"show": card is not None, **(card or {}), "csrf_token": context.get("csrf_token")}

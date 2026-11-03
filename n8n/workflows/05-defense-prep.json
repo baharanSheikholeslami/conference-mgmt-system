@@ -1,0 +1,249 @@
+{
+  "id": "pm5DefensePrep05",
+  "name": "فاز ۳ — ۵. آماده‌سازی دفاع (پرسش‌های محتمل و نقاط ضعف)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## عامل آماده‌سازی دفاع\nدانشجو در صفحه‌ی «آماده‌سازی دفاع» دکمه را می‌زند و پورتال متن پایان‌نامه، خلاصه‌ی پیشنهاد و دسته‌های پرسش را به `POST /webhook/defense-prep` می‌فرستد.\n\n۱) متن به چند تکه شکسته می‌شود و مدل زبانی برای هر تکه، مثل یک داور، پرسش و نقطه‌ضعف همراه با **نقل‌قول عینی** پیشنهاد می‌کند.\n۲) نامزدها گردآوری می‌شوند و مدل در یک فراخوانی دیگر فقط **شماره‌ی** مهم‌ترین‌ها را برمی‌گزیند (نقل‌قول‌ها دست نمی‌خورند).\n۳) نتیجه به پورتال برمی‌گردد و پورتال هر نقل‌قول را در متن واقعی راستی‌آزمایی می‌کند.\n\n**فقط برای تمرین دانشجوست و هیچ اقدامی روی پرونده ثبت نمی‌کند.**",
+        "height": 280,
+        "width": 700
+      },
+      "id": "e872ddfc-f73d-55cd-9891-354d7086e850",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "defense-prep",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "5504f798-0c94-5cd9-90a4-eff0a1f77cb0",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "65ab1f84-0adb-5a89-a82e-f54d8107f129"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و تکه‌تکه‌کردن پایان‌نامه (الگوی map-reduce، مثل عامل اعتبارسنجی).\n// برای هر تکه از مدل می‌خواهیم مثل یک «داور جلسه‌ی دفاع» پرسش و نقطه‌ضعف پیدا کند و برای هرکدام\n// جمله‌ای را عیناً از متن نقل کند؛ پورتال بعداً همان نقل‌قول را در متن واقعی راستی‌آزمایی می‌کند.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst body = req.body || {};\nconst text = String((body.thesis || {}).text || '');\nconst proposal = String((body.proposal || {}).excerpt || '').slice(0, Number($env.DEFENSE_PROPOSAL_CHARS) || 2500);\nconst categories = Array.isArray(body.categories) ? body.categories : [];\nconst SIZE = Number($env.DEFENSE_WINDOW_CHARS) || 6000;\nconst OVERLAP = 300;\n\nconst windows = [];\nfor (let start = 0; start < text.length; start += SIZE - OVERLAP) {\n  windows.push(text.slice(start, start + SIZE));\n  if (start + SIZE >= text.length) break;\n}\n\nconst list = categories.map((c) => `- ${c.key}: ${c.label} — ${c.hint}`).join('\\n');\nconst system = [\n  'تو یکی از داوران جلسه‌ی دفاع پروژه‌ی کارشناسی مهندسی کامپیوتر در دانشگاه صنعتی امیرکبیر هستی.',\n  'ورودی: دسته‌های پرسش، خلاصه‌ی پیشنهاد پروژه (آن‌چه دانشجو وعده داده بود) و «یک تکه» از متن پایان‌نامه.',\n  'وظیفه: فقط بر پایه‌ی همین تکه، پرسش‌هایی که یک داور دقیق در جلسه می‌پرسد و نقاط ضعفی که به آن‌ها ایراد می‌گیرد را پیدا کن.',\n  'قواعد:',\n  '۱. حداکثر ۴ پرسش و ۲ نقطه‌ضعف. پرسش باید مشخص و مربوط به همین متن باشد، نه کلی (مثلاً «چرا آستانه‌ی ۰٫۷ را انتخاب کردید؟» نه «روش خود را توضیح دهید»).',\n  '۲. برای هر مورد، evidence را عیناً و بدون تغییر از متن همین تکه رونویسی کن (۸ تا ۲۰ واژه). برای دسته‌ی proposal_gap می‌توانی از متن پیشنهاد نقل کنی.',\n  '۳. category فقط یکی از کلیدهای انگلیسی دسته‌هاست. severity یکی از high، medium، low است.',\n  '۴. اگر این تکه فقط فهرست مطالب، مراجع یا مشخصات است و چیز قابل‌پرسشی ندارد، فهرست‌ها را خالی برگردان.',\n  '۵. همه‌ی متن‌ها فارسی باشد.',\n  'خروجی فقط یک شیء JSON با همین شکل باشد و هیچ متن دیگری ننویس:',\n  '{\"questions\": [{\"category\": \"method\", \"question\": \"...\", \"why\": \"<چرا داور این را می‌پرسد، یک جمله>\", \"evidence\": \"<نقل‌قول عینی>\"}],',\n  ' \"weak_points\": [{\"title\": \"...\", \"detail\": \"<یک یا دو جمله>\", \"suggestion\": \"<دانشجو چه کند>\", \"severity\": \"medium\", \"evidence\": \"<نقل‌قول عینی>\"}]}',\n].join('\\n');\n\nreturn windows.map((windowText, index) => ({\n  json: {\n    prep_id: body.prep_id,\n    result_path: body.result_path,\n    max_questions: Number(body.max_questions) || 12,\n    max_weak_points: Number(body.max_weak_points) || 6,\n    categories: categories.map((c) => c.key),\n    window_index: index,\n    window_count: windows.length,\n    llm_request: {\n      model: $env.LLM_CHAT_MODEL,\n      temperature: 0.2,\n      stream: false,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: system },\n        {\n          role: 'user',\n          content:\n            `عنوان: ${(body.case || {}).title_fa || ''}\\n\\nدسته‌های پرسش:\\n${list}\\n\\n` +\n            `خلاصه‌ی پیشنهاد پروژه:\\n\"\"\"\\n${proposal || '(در دسترس نیست)'}\\n\"\"\"\\n\\n` +\n            `متن پایان‌نامه (تکه‌ی ${index + 1} از ${windows.length}):\\n\"\"\"\\n${windowText}\\n\"\"\"`,\n        },\n      ],\n    },\n  },\n}));"
+      },
+      "id": "d8dd5e26-80b2-564f-b2f5-72a7766f7fd1",
+      "name": "Split Into Windows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "f945582e-c6cc-5927-b751-a4ebde2f4da8",
+      "name": "LLM Examine Window",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — گردآوری نامزدها از همه‌ی تکه‌ها و ساختن درخواست «گزینش نهایی».\n// مدل در گام بعد فقط «شماره‌ی» نامزدها را برمی‌گزیند و می‌تواند متن پرسش را روان‌تر کند، اما\n// نقل‌قول هر مورد همان نقل‌قول اصلی تکه می‌ماند؛ پس گزینش نهایی نمی‌تواند شاهد تازه بسازد.\nconst windows = $('Split Into Windows').all();\nconst responses = $input.all();\nconst first = windows[0].json;\n\nfunction parseJson(content) {\n  const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n  const start = clean.indexOf('{');\n  const end = clean.lastIndexOf('}');\n  if (start < 0 || end <= start) throw new Error('no JSON object');\n  return JSON.parse(clean.slice(start, end + 1));\n}\nconst str = (v, n) => String(v || '').replace(/\\s+/g, ' ').trim().slice(0, n);\n\nconst questions = [];\nconst weak = [];\nlet failed = 0;\nlet lastError = '';\nresponses.forEach((item, i) => {\n  const res = item.json || {};\n  const content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\n  let parsed = null;\n  if (content) {\n    try { parsed = parseJson(content); } catch (e) { lastError = 'خروجی مدل JSON معتبر نبود'; }\n  } else {\n    const err = res.error;\n    lastError = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'پاسخ خالی از مدل';\n  }\n  if (!parsed || typeof parsed !== 'object') { failed += 1; return; }\n  for (const q of Array.isArray(parsed.questions) ? parsed.questions.slice(0, 6) : []) {\n    if (!q || !str(q.question, 400)) continue;\n    questions.push({ n: questions.length + 1, category: str(q.category, 30), question: str(q.question, 400),\n                     why: str(q.why, 500), evidence: str(q.evidence, 300), window: i + 1 });\n  }\n  for (const w of Array.isArray(parsed.weak_points) ? parsed.weak_points.slice(0, 3) : []) {\n    if (!w || !str(w.title, 200)) continue;\n    weak.push({ n: weak.length + 1, title: str(w.title, 200), detail: str(w.detail, 600),\n                suggestion: str(w.suggestion, 600), severity: str(w.severity, 10),\n                evidence: str(w.evidence, 300), window: i + 1 });\n  }\n});\n\nconst model = $env.LLM_CHAT_MODEL;\nconst error = failed === windows.length\n  ? { error: 'مدل زبانی پاسخ قابل‌استفاده‌ای نداد.', detail: String(lastError).slice(0, 300), model }\n  : null;\n\nconst listQ = questions.map((q) => `Q${q.n} [${q.category}] ${q.question}`).join('\\n');\nconst listW = weak.map((w) => `W${w.n} [${w.severity}] ${w.title}: ${w.detail}`).join('\\n');\nconst system = [\n  'تو رئیس جلسه‌ی دفاع پروژه‌ی کارشناسی هستی و باید از میان پرسش‌ها و نقاط ضعفی که داوران پیشنهاد داده‌اند، مهم‌ترین‌ها را برگزینی.',\n  `قواعد: حداکثر ${first.max_questions} پرسش و ${first.max_weak_points} نقطه‌ضعف. پرسش‌های تکراری یا هم‌معنا را یکی کن. ` +\n    'تا جای ممکن از همه‌ی دسته‌ها پرسش بیاور و پرسش‌هایی را ترجیح بده که در جلسه‌ی واقعی بیشتر پرسیده می‌شوند.',\n  'می‌توانی متن پرسش را کوتاه‌تر و روان‌تر کنی، اما معنایش را عوض نکن. فقط شماره‌های موجود در فهرست را برگردان.',\n  'خروجی فقط یک شیء JSON با همین شکل:',\n  '{\"questions\": [{\"n\": 3, \"question\": \"<متن نهایی پرسش>\"}], \"weak_points\": [{\"n\": 2}]}',\n].join('\\n');\n\nreturn [{\n  json: {\n    prep_id: first.prep_id,\n    result_path: first.result_path,\n    max_questions: first.max_questions,\n    max_weak_points: first.max_weak_points,\n    windows: windows.length,\n    failed_windows: failed,\n    error,\n    candidates: { questions, weak_points: weak },\n    llm_request: {\n      model,\n      temperature: 0,\n      stream: false,\n      response_format: { type: 'json_object' },\n      messages: [\n        { role: 'system', content: system },\n        { role: 'user', content: `پرسش‌های پیشنهادی:\\n${listQ || '(هیچ)'}\\n\\nنقاط ضعف پیشنهادی:\\n${listW || '(هیچ)'}` },\n      ],\n    },\n  },\n}];"
+      },
+      "id": "00b40923-4ec6-51e2-94fe-72d3b16627ce",
+      "name": "Collect Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "fc05d98a-6a46-5188-8689-c49ad0e626f7",
+      "name": "LLM Select Final",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۵ — ساختن نتیجه‌ی نهایی. اگر گزینش نهایی ناموفق بود، نامزدها به نوبت از هر دسته\n// برداشته می‌شوند (پس خرابی این گام فقط کیفیت گزینش را کم می‌کند، نه کل نتیجه را).\nconst c = $('Collect Candidates').first().json;\nconst model = $env.LLM_CHAT_MODEL;\nif (c.error) {\n  return [{ json: { result_path: c.result_path, result: c.error } }];\n}\nconst { questions, weak_points } = c.candidates;\nif (!questions.length && !weak_points.length) {\n  return [{ json: { result_path: c.result_path,\n    result: { error: 'مدل زبانی در متن پایان‌نامه پرسش یا نکته‌ای پیدا نکرد.', model } } }];\n}\n\nfunction parseJson(content) {\n  const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n  const start = clean.indexOf('{');\n  const end = clean.lastIndexOf('}');\n  if (start < 0 || end <= start) throw new Error('no JSON object');\n  return JSON.parse(clean.slice(start, end + 1));\n}\n\nlet picked = null;\nconst res = $input.first().json || {};\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\ntry { picked = content ? parseJson(content) : null; } catch (e) { picked = null; }\n\nconst byQ = Object.fromEntries(questions.map((q) => [q.n, q]));\nconst byW = Object.fromEntries(weak_points.map((w) => [w.n, w]));\nlet outQ = [];\nlet outW = [];\nif (picked && Array.isArray(picked.questions) && picked.questions.length) {\n  const used = new Set();\n  for (const p of picked.questions) {\n    const q = byQ[Number(p && p.n)];\n    if (!q || used.has(q.n)) continue;\n    used.add(q.n);\n    const text = String((p && p.question) || '').replace(/\\s+/g, ' ').trim();\n    outQ.push({ ...q, question: text.length >= 10 ? text.slice(0, 400) : q.question });\n  }\n  for (const p of Array.isArray(picked.weak_points) ? picked.weak_points : []) {\n    const w = byW[Number(p && p.n)];\n    if (w && !outW.includes(w)) outW.push(w);\n  }\n}\nif (!outQ.length) {\n  // نوبتی از هر دسته\n  const groups = {};\n  for (const q of questions) (groups[q.category] = groups[q.category] || []).push(q);\n  const lists = Object.values(groups);\n  for (let i = 0; outQ.length < c.max_questions && lists.some((l) => l.length > i); i += 1) {\n    for (const l of lists) if (l[i] && outQ.length < c.max_questions) outQ.push(l[i]);\n  }\n}\nif (!outW.length) {\n  const rank = { high: 0, medium: 1, low: 2 };\n  outW = [...weak_points].sort((a, b) => (rank[a.severity] ?? 1) - (rank[b.severity] ?? 1));\n}\n\nconst strip = ({ n, window, ...rest }) => rest;\nreturn [{\n  json: {\n    result_path: c.result_path,\n    result: {\n      questions: outQ.slice(0, c.max_questions).map(strip),\n      weak_points: outW.slice(0, c.max_weak_points).map(strip),\n      windows: c.windows,\n      failed_windows: c.failed_windows,\n      model,\n    },\n  },\n}];"
+      },
+      "id": "f785c032-dd99-5a33-88cb-fa1032ba6980",
+      "name": "Build Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}{{ $json.result_path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "4d46bca8-0ece-532b-84cb-4c31ae203fcc",
+      "name": "Send Result To Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Split Into Windows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Windows": {
+      "main": [
+        [
+          {
+            "node": "LLM Examine Window",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Examine Window": {
+      "main": [
+        [
+          {
+            "node": "Collect Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Candidates": {
+      "main": [
+        [
+          {
+            "node": "LLM Select Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Select Final": {
+      "main": [
+        [
+          {
+            "node": "Build Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Result": {
+      "main": [
+        [
+          {
+            "node": "Send Result To Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
