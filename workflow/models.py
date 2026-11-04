@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from . import rules
 from .enums import (CaseRole, DeadlineKind, DocKind, ReviewDecision, Semester,
-                    State, UserType)
+                    State, TitleSource, UserType)
 
 
 # ───────────────────────── کاربران ─────────────────────────
@@ -61,8 +61,14 @@ class ProjectCase(models.Model):
                                    related_name="co_advised_cases", verbose_name="استاد مشاور")
     department = models.ForeignKey(Department, null=True, blank=True, on_delete=models.PROTECT,
                                    verbose_name="گروه آموزشی")
-    title_fa = models.CharField("عنوان فارسی", max_length=250)
+    # دانشجو هنگام ثبت پرونده موضوع ندارد: فقط حوزه و علایقش را می‌نویسد تا سامانه استاد راهنما
+    # پیشنهاد کند. عنوان پس از بارگذاری پیشنهاد از متن آن استخراج می‌شود (title_source).
+    research_area = models.CharField("حوزه‌ی مورد علاقه", max_length=200, blank=True)
+    interests = models.TextField("توضیح علایق و زمینه‌ی مورد نظر", blank=True)
+    title_fa = models.CharField("عنوان فارسی", max_length=250, blank=True)
     title_en = models.CharField("عنوان انگلیسی", max_length=250, blank=True)
+    title_source = models.CharField("منبع عنوان", max_length=12, choices=TitleSource.choices,
+                                    blank=True, default=TitleSource.NONE)
 
     academic_year = models.PositiveSmallIntegerField("سال تحصیلی (شمسی، مثلاً ۱۴۰۴)")
     semester = models.CharField("نیم‌سال ثبت‌نام", max_length=10, choices=Semester.choices)
@@ -102,7 +108,20 @@ class ProjectCase(models.Model):
         ]
 
     def __str__(self):
-        return self.title_fa
+        return self.display_title
+
+    @property
+    def display_title(self):
+        """عنوان قابل‌نمایش؛ پیش از بارگذاری پیشنهاد هنوز عنوانی نیست."""
+        if self.title_fa:
+            return self.title_fa
+        area = f" — {self.research_area}" if self.research_area else ""
+        return f"پروژه‌ی {self.author}{area} (بی‌عنوان)" if self.author_id else "پروژه‌ی بی‌عنوان"
+
+    @property
+    def interests_text(self):
+        """متن «حوزه + علایق» دانشجو؛ مبنای پیشنهاد استاد راهنما."""
+        return "\n".join(p.strip() for p in (self.research_area, self.interests) if p and p.strip())
 
     # ── قواعد وابسته به نوع نویسنده ──
     @property

@@ -228,10 +228,19 @@ def case_create(request):
         except services.WorkflowError as e:
             form.add_error(None, str(e))
         else:
-            messages.success(request, "پرونده ثبت شد. اکنون استاد راهنما را انتخاب کنید.")
-            return redirect("case_detail", pk=case.pk)
+            # گام بعد: سامانه از روی حوزه و علایق، استادان راهنمای مرتبط را پیشنهاد می‌کند
+            try:
+                agents.request_advisor_suggestions(case)
+            except agents.AgentError:
+                pass
+            messages.success(request, "پرونده ثبت شد. سامانه استادان راهنمای مرتبط با علایق شما را پیشنهاد کرده است؛ "
+                                      "یکی را انتخاب کنید تا درخواستتان برای او فرستاده شود.")
+            return redirect("case_action", pk=case.pk, action="select_advisor")
     return render(request, "workflow/form.html", {
-        "form": form, "title": "ثبت پرونده‌ی جدید", "submit_label": "ثبت پرونده"})
+        "form": form, "title": "ثبت پرونده‌ی جدید", "submit_label": "ثبت و پیشنهاد استاد راهنما",
+        "intro": "در این مرحله لازم نیست موضوع پروژه را بدانید. حوزه یا توضیحی از علایقتان بنویسید تا سامانه "
+                 "استاد راهنما پیشنهاد کند. پس از پذیرش استاد و بارگذاری پیشنهاد پروژه، سامانه موضوع را از متن "
+                 "پیشنهاد استخراج و در پرونده ثبت می‌کند."})
 
 
 # اقدام‌هایی که دانشجو در باکس همان سند می‌بیند (نه در کارت «اقدام‌های شما»)
@@ -340,6 +349,9 @@ def case_detail(request, pk):
         "offers": _action_buttons(case, offers),
         "cancel_offer": next((o for o in offers if o.transition.action == "cancel"), None),
         "can_edit": services.can_edit(case, user),
+        "topic": agents.topic_panel(case, user),
+        "show_interests": bool(case.interests_text) and (
+            user.id in (case.author_id, case.advisor_id) or services.sees_all_projects(user)),
         "boxes": _doc_boxes(case, user, offers, versions),
         "panel": _panel(request, case, versions),
         "feedback": services.pending_feedback(case),
@@ -359,17 +371,20 @@ def case_edit(request, pk):
     case = _case_or_404(request.user, pk)
     if not services.can_edit(case, request.user):
         raise PermissionDenied
-    form = forms.CaseEditForm(_posted(request), instance=case)
+    form = forms.CaseEditForm(_posted(request), instance=ProjectCase.objects.get(pk=case.pk),
+                              user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
             services.edit_case(case, request.user, **form.cleaned_data)
         except services.WorkflowError as e:
             form.add_error(None, str(e))
         else:
-            messages.success(request, "عنوان پرونده به‌روز شد.")
+            messages.success(request, "مشخصات پرونده به‌روز شد.")
             return redirect("case_detail", pk=case.pk)
+    titled = "title_fa" in form.fields
     return render(request, "workflow/form.html", {
-        "form": form, "case": case, "title": "ویرایش عنوان پرونده", "submit_label": "ذخیره"})
+        "form": form, "case": case, "submit_label": "ذخیره",
+        "title": "ویرایش عنوان پروژه" if titled else "ویرایش حوزه و علایق"})
 
 
 @login_required
@@ -391,7 +406,9 @@ def document_upload(request, pk):
         "form": form, "case": case, "multipart": True, "submit_label": "بارگذاری",
         "title": f"بارگذاری {DocKind(kind).label}", "template_file": TEMPLATES[kind],
         "intro": "فایل را مطابق قالب نمونه آماده کنید. پس از بارگذاری، سامانه قالب آن را بررسی می‌کند و "
-                 "اگر بخشی جا مانده باشد همین‌جا می‌گوید؛ بعد می‌توانید دوباره بارگذاری کنید یا همین نسخه را بفرستید."})
+                 "اگر بخشی جا مانده باشد همین‌جا می‌گوید؛ بعد می‌توانید دوباره بارگذاری کنید یا همین نسخه را بفرستید."
+                 + (" عنوان (موضوع) پروژه هم از متن پیشنهاد استخراج و در پرونده ثبت می‌شود؛ اگر درست نبود "
+                    "می‌توانید آن را اصلاح کنید." if kind == DocKind.PROPOSAL else "")})
 
 
 @login_required

@@ -1,6 +1,6 @@
 {% extends "workflow/base.html" %}
 {% load static portal agent_tags %}
-{% block title %}{{ case.title_fa }}{% endblock %}
+{% block title %}{{ case.display_title }}{% endblock %}
 {% block body_class %}{% if panel %}panel-open{% endif %}{% endblock %}
 {% block content %}
 <a class="crumb" href="{% url 'dashboard' %}">بازگشت به داشبورد</a>
@@ -8,11 +8,17 @@
 <header class="case-hero">
   <div class="case-hero-top">
     {% include "workflow/_state_badge.html" %}
-    {% if can_edit %}<a class="btn ghost compact" href="{% url 'case_edit' case.pk %}">ویرایش عنوان</a>{% endif %}
+    {% if can_edit %}<a class="btn ghost compact" href="{% url 'case_edit' case.pk %}">{% if case.state == "advisor_selection" %}ویرایش حوزه و علایق{% else %}ویرایش عنوان{% endif %}</a>{% endif %}
     <span class="roles">{% for role in roles %}<span class="role-chip">{{ role }}</span>{% empty %}<span class="role-chip">فقط مشاهده</span>{% endfor %}</span>
   </div>
+  {% if case.title_fa %}
   <h1>{{ case.title_fa }}</h1>
   {% if case.title_en %}<p class="title-en ltr">{{ case.title_en }}</p>{% endif %}
+  {% else %}
+  <h1 class="untitled">{{ case.display_title }}</h1>
+  <p class="muted topic-note">موضوع پروژه هنوز تعیین نشده است؛ پس از پذیرش استاد راهنما و بارگذاری پیشنهاد، سامانه آن را از متن پیشنهاد استخراج و این‌جا ثبت می‌کند.</p>
+  {% endif %}
+  {% if topic %}{% include "agents/_topic.html" %}{% endif %}
   {% if phases %}
   <ol class="phases" aria-label="مرحله‌ی پروژه">
     {% for p in phases %}<li class="{{ p.status }}"{% if p.status == "current" %} aria-current="step"{% endif %}><span>{{ p.label }}</span></li>{% endfor %}
@@ -53,6 +59,10 @@
   <dl class="facts">
     <div><dt>دانشجو</dt><dd>{{ case.author }}{% if case.author.user_type == "external" %} <small>(نویسنده غیردانشجو)</small>{% endif %}</dd></div>
     <div><dt>شماره دانشجویی</dt><dd>{{ case.author.student_number|fa|default:"—" }}</dd></div>
+    {% if show_interests %}
+    {% if case.research_area %}<div><dt>حوزه‌ی مورد علاقه</dt><dd>{{ case.research_area }}</dd></div>{% endif %}
+    {% if case.interests %}<div class="wide"><dt>علایق و زمینه‌ی مورد نظر دانشجو</dt><dd>{{ case.interests|linebreaksbr }}</dd></div>{% endif %}
+    {% endif %}
     <div><dt>استاد راهنما</dt><dd>{{ case.advisor|default:"—" }}</dd></div>
     <div><dt>استاد مشاور</dt><dd>{{ case.co_advisor|default:"—" }}</dd></div>
     <div><dt>داور(ان)</dt><dd>{% for a in assignments %}{{ a.referee }}{% if not forloop.last %}، {% endif %}{% empty %}—{% endfor %}</dd></div>

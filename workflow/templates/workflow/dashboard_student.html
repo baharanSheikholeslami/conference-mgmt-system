@@ -48,7 +48,7 @@
         {% include "workflow/_state_badge.html" %}
         <span class="muted">{{ case.get_semester_display }} {{ case.academic_year|fa }}</span>
       </div>
-      <h3>{{ case.title_fa }}</h3>
+      <h3>{{ case.display_title }}</h3>
       {% if case.title_en %}<p class="title-en ltr">{{ case.title_en }}</p>{% endif %}
       {% if case_phases %}
       <ol class="phases compact" aria-label="مرحله‌ی پروژه">
@@ -72,7 +72,7 @@
 <section class="section" aria-labelledby="past-title">
   <h2 id="past-title" class="section-title">پرونده‌های پیشین</h2>
   <ul class="plain-list">
-    {% for c in past %}<li><a href="{% url 'case_detail' c.pk %}">{{ c.title_fa }}</a> {% include "workflow/_state_badge.html" with case=c %}</li>{% endfor %}
+    {% for c in past %}<li><a href="{% url 'case_detail' c.pk %}">{{ c.display_title }}</a> {% include "workflow/_state_badge.html" with case=c %}</li>{% endfor %}
   </ul>
 </section>
 {% endif %}

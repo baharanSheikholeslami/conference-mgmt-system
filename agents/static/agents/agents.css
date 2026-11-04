@@ -86,3 +86,8 @@ details > summary { cursor: pointer; }
 @media (max-width: 640px) {
   .assistant-panel { inset-inline: .75rem; width: auto; bottom: 5rem; }
 }
+
+/* عنوان استخراج‌شده از پیشنهاد (زیر عنوان پرونده) */
+.topic-source { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .35rem 0 0; font-size: .82rem; color: var(--muted); }
+.topic-source .agent-tag { margin: 0; }
+.topic-source .kw { background: var(--surface-2, #f3f1ea); border-radius: 999px; padding: .05rem .55rem; }

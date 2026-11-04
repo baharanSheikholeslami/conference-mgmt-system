@@ -556,3 +556,8 @@ body.auth-page {
 .comments-block .comment .pill { font-size: .72rem; }
 .section-pick { display: flex; align-items: center; gap: .5rem; font-size: .85rem; color: var(--muted); width: 100%; }
 .section-pick select { flex: 1; min-width: 0; font: inherit; color: var(--ink); padding: .35rem .5rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+
+/* پرونده‌ی بدون موضوع (پیش از بارگذاری پیشنهاد) */
+.case-hero h1.untitled { color: var(--muted); font-weight: 600; }
+.case-hero .topic-note { margin: .25rem 0 0; font-size: .88rem; }
+dl.facts > div.wide { grid-column: 1 / -1; }

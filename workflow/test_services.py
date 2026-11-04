@@ -63,7 +63,9 @@ class WorkflowTestCase(TestCase):
         return mock.patch("django.utils.timezone.localdate", return_value=day)
 
     def new_case(self, author=None):
-        return services.create_case(author or self.student, "عنوان آزمایشی")
+        """جریان جدید: پرونده بدون موضوع، فقط با حوزه و علایق دانشجو ثبت می‌شود."""
+        return services.create_case(author or self.student, research_area="هوش مصنوعی",
+                                    interests="عامل‌های مبتنی بر مدل زبانی بزرگ")
 
     def choose_advisor(self, case, author=None, advisor=None):
         """دانشجو استاد را انتخاب می‌کند و استاد درخواست را می‌پذیرد؛ پرونده به «تدوین پیشنهاد» می‌رود."""

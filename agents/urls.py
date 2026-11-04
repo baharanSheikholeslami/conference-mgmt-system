@@ -14,6 +14,8 @@ urlpatterns = [
     path("api/agents/validations/<int:pk>/result/", api.validation_result, name="api_validation_result"),
     path("api/agents/referee-suggestions/<int:pk>/result/", api.referee_suggestions_result,
          name="api_referee_suggestions_result"),
+    path("api/agents/topic-extractions/<int:pk>/result/", api.topic_extraction_result,
+         name="api_topic_extraction_result"),
     path("api/agents/rag/search/", api.rag_search, name="api_rag_search"),
     path("api/agents/reminders/due/", api.reminders_due, name="api_reminders_due"),
     path("api/agents/notifications/", api.notification_record, name="api_notification_record"),

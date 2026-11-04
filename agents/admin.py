@@ -1,13 +1,19 @@
 from django.contrib import admin
 
 from .models import (AssistantMessage, DocumentValidation, Notification, PolicyChunk,
-                     RefereeSuggestion, SuggestionRun)
+                     RefereeSuggestion, SuggestionRun, TopicExtraction)
 
 
 @admin.register(DocumentValidation)
 class DocumentValidationAdmin(admin.ModelAdmin):
     list_display = ("version", "status", "model", "requested_at", "finished_at")
     list_filter = ("status",)
+
+
+@admin.register(TopicExtraction)
+class TopicExtractionAdmin(admin.ModelAdmin):
+    list_display = ("version", "status", "title_fa", "verified", "applied", "model", "requested_at")
+    list_filter = ("status", "verified", "applied")
 
 
 @admin.register(PolicyChunk)

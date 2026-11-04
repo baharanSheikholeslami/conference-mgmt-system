@@ -64,15 +64,17 @@ def suggestions_refresh(request, pk):
 @login_required
 @require_POST
 def advisor_suggestions_request(request, pk):
-    """دانشجو علایقش را می‌نویسد و از سامانه پیشنهاد استاد راهنما می‌خواهد (فرم بالای «انتخاب استاد راهنما»)."""
-    _require_agents(request.user)
+    """دانشجو حوزه و علایقش را اصلاح می‌کند و دوباره پیشنهاد استاد راهنما می‌خواهد (کادر بالای «انتخاب استاد راهنما»)."""
+    if not services.suggestions_visible_to(request.user, services.ADVISOR):
+        raise Http404
     case = get_object_or_404(wf.cases_for(request.user), pk=pk)
     if not services.can_request_advisor_suggestions(case, request.user):
         raise PermissionDenied
     try:
-        services.request_advisor_suggestions(case, request.POST.get("interests", ""))
+        services.request_advisor_suggestions(case, request.POST.get("research_area", ""),
+                                             request.POST.get("interests", ""), request.user)
     except services.AgentError as e:
         messages.error(request, str(e))
     else:
-        messages.info(request, "درخواست پیشنهاد استاد راهنما ثبت شد؛ نتیجه چند لحظه بعد همین‌جا نمایش داده می‌شود.")
+        messages.info(request, "درخواست پیشنهاد استاد راهنما ثبت شد؛ نتیجه همین‌جا نمایش داده می‌شود.")
     return redirect("case_action", pk=case.pk, action="select_advisor")

@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from workflow import rules
 from workflow.enums import (CaseRole, DeadlineKind, DocKind, ReviewDecision, Semester, State,
-                            UserType)
+                            TitleSource, UserType)
 from workflow.models import (CaseEvent, Department, DocumentVersion, ProjectCase,
                              RefereeAssignment, Review, Signature, User)
 from workflow.signing import sign_version
@@ -66,14 +66,32 @@ ADVISORS = {
     "fatemeh.mousavi": "referee4", "alireza.niknam": "advisor2", "zahra.babaei": "referee2",
 }
 
-# عنوان پروژه‌ی پرونده‌های پایه (کلید داخلی دانشجو ← (عنوان فارسی، عنوان انگلیسی))
+# عنوان پروژه‌ی پرونده‌های پایه (کلید داخلی دانشجو ← (عنوان فارسی، عنوان انگلیسی)).
+# در جریان جدید پرونده‌ای که هنوز پیشنهاد بارگذاری نکرده عنوانی ندارد (پرونده‌ی بهاران در «تدوین پیشنهاد»)؛
+# عنوان پس از بارگذاری پیشنهاد از متن آن استخراج می‌شود.
 BASE_TITLES = {
-    "student1": ("پیاده‌سازی سامانه هوشمند مدیریت کنفرانس مبتنی بر عامل‌های هوش مصنوعی",
-                 "Implementation of an Intelligent Conference Management System Based on AI Agents"),
+    "student1": ("", ""),
     "external1": ("مقایسه روش‌های ارزیابی سامانه‌های مدیریت همایش علمی",
                   "A Comparison of Evaluation Methods for Scientific Conference Management Systems"),
     "student3": ("طراحی موتور جست‌وجوی معنایی برای اسناد فارسی",
                  "Design of a Semantic Search Engine for Persian Documents"),
+}
+
+# حوزه و علایقی که هر دانشجو هنگام ثبت پرونده نوشته است (مبنای پیشنهاد استاد راهنما)
+INTERESTS = {
+    "baharan.sheikholeslami": ("هوش مصنوعی، اینترنت اشیا",
+                               "به عامل‌های هوش مصنوعی و خودکارسازی فرایندهای دانشگاه، مثل مدیریت کنفرانس و پروژه‌ها، علاقه دارم."),
+    "kamran.shirazi": ("مهندسی نرم‌افزار", "ارزیابی و مقایسه‌ی سامانه‌های نرم‌افزاری مدیریت همایش."),
+    "amir.hosseini": ("پردازش زبان طبیعی", "جست‌وجوی معنایی و بازیابی اطلاعات در متن‌های فارسی."),
+    "mahsa.rahimi": ("پردازش زبان طبیعی", "مدل‌های زبانی و تشخیص اطلاعات نادرست در شبکه‌های اجتماعی."),
+    "reza.sadeghi": ("سامانه‌های توصیه‌گر", "یادگیری عمیق و پیشنهاد محتوا به کاربران."),
+    "niloofar.kazemi": ("پایگاه‌داده", "طراحی پایگاه‌داده و سامانه‌های اطلاعاتی."),
+    "pouria.abbasi": ("امنیت شبکه", "امنیت اینترنت اشیا و پروتکل‌های ارتباطی."),
+    "elaheh.jafari": ("بینایی ماشین", "پردازش تصویر و تشخیص چهره با یادگیری عمیق."),
+    "mohammad.taheri": ("سامانه‌های نهفته", "کاهش مصرف انرژی در سخت‌افزارهای کوچک."),
+    "fatemeh.mousavi": ("مدل‌های زبانی بزرگ", "چت‌بات‌ها و بازیابی-افزوده تولید برای پاسخ به پرسش دانشجویان."),
+    "alireza.niknam": ("امنیت نرم‌افزار", "تحلیل کد و یافتن آسیب‌پذیری برنامه‌های وب."),
+    "zahra.babaei": ("برنامه‌نویسی موبایل", "برنامه‌های موبایل و رایانش ابری."),
 }
 
 # دانشجویانی که فقط با --full ساخته می‌شوند؛ هر کدام یک پرونده در یکی از وضعیت‌های میانی
@@ -88,9 +106,8 @@ FULL_STUDENTS = [
      "A Library Management System on PostgreSQL"),
     ("pouria.abbasi", "پوریا", "عباسی", "40031095", State.REVISION,
      "تحلیل امنیت پروتکل‌های ارتباطی اینترنت اشیا", "Security Analysis of Internet of Things Communication Protocols"),
-    ("elaheh.jafari", "الهه", "جعفری", "40031096", State.ADVISOR_PENDING,
-     "سامانه تشخیص چهره برای حضور و غیاب خودکار کلاس‌ها",
-     "A Face-Recognition System for Automatic Class Attendance"),
+    # درخواست راهنمایی هنوز پاسخ نگرفته؛ پس هنوز پیشنهاد و عنوانی ندارد
+    ("elaheh.jafari", "الهه", "جعفری", "40031096", State.ADVISOR_PENDING, "", ""),
     ("mohammad.taheri", "محمد", "طاهری", "40031097", State.COUNCIL_APPROVAL,
      "بهینه‌سازی مصرف انرژی در سامانه‌های نهفته", "Energy Consumption Optimization in Embedded Systems"),
     ("fatemeh.mousavi", "فاطمه", "موسوی", "40031098", State.IN_PROGRESS,
@@ -235,10 +252,29 @@ class Command(BaseCommand):
         # استاد مشاور فقط نمایشی است؛ برای چند پرونده ثبت می‌شود تا در صفحه‌ها دیده شود
         ProjectCase.objects.filter(author__username__in=["amir.hosseini", "alireza.niknam", "fatemeh.mousavi"],
                                    co_advisor__isnull=True).update(co_advisor=users["referee2"])
-        for case in ProjectCase.objects.select_related("advisor"):
+        for case in ProjectCase.objects.select_related("advisor", "author"):
             sign_seeded(case)
+            self.seed_topic_fields(case)
 
         self.stdout.write(self.style.SUCCESS("داده‌ی نمونه آماده است (رمز همه‌ی کاربران: test1234)."))
+
+    @staticmethod
+    def seed_topic_fields(case):
+        """
+        جریان جدید: حوزه و علایق دانشجو از ثبت پرونده می‌آید؛ پرونده‌ی بدون پیشنهاد عنوانی ندارد و
+        عنوان پرونده‌های دارای پیشنهاد «استخراج‌شده از فیلد عنوان فرم» فرض می‌شود.
+        """
+        area, interests = INTERESTS.get(case.author.username, ("", ""))
+        fields = {}
+        if not case.research_area and not case.interests and (area or interests):
+            fields.update(research_area=area, interests=interests)
+        has_proposal = case.versions.filter(kind=DocKind.PROPOSAL).exists()
+        if not has_proposal and (case.title_fa or case.title_source):
+            fields.update(title_fa="", title_en="", title_source=TitleSource.NONE)
+        elif has_proposal and case.title_fa and case.title_source in (TitleSource.NONE, TitleSource.MANUAL):
+            fields.update(title_source=TitleSource.HEADING)
+        if fields:
+            ProjectCase.objects.filter(pk=case.pk).update(**fields)
 
     @staticmethod
     def rename_legacy(username):

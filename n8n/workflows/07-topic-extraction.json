@@ -1,0 +1,181 @@
+{
+  "id": "pm7TopicExtract07",
+  "name": "فاز ۳ — ۷. استخراج موضوع از پیشنهاد",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## عامل استخراج موضوع از پیشنهاد\nدر جریان جدید دانشجو هنگام ثبت پرونده موضوعی انتخاب نمی‌کند (فقط حوزه و علایق، برای پیشنهاد استاد راهنما).\n\nپس از بارگذاری هر نسخه‌ی پیشنهاد، پورتال متن آن را به `POST /webhook/extract-topic` می‌فرستد؛ مدل زبانی عنوان فارسی/انگلیسی و چند کلیدواژه را می‌خواند و نتیجه به پورتال برمی‌گردد.\n\nپورتال بررسی می‌کند عنوان عیناً در متن آمده باشد و عنوانی را که دانشجو یا استاد اصلاح کرده هرگز بازنویسی نمی‌کند.",
+        "height": 260,
+        "width": 640
+      },
+      "id": "2038bd51-d507-515b-ae90-d310978cca82",
+      "name": "Note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract-topic",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "598a2cf5-d2fa-5f74-be45-ed4e9447394e",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "a046fdba-ad9d-513e-907d-0db7832fd218"
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۱ — بررسی توکن و ساخت پرامپت استخراج موضوع.\n// دانشجو هنگام ثبت پرونده موضوعی انتخاب نکرده است؛ این عامل عنوان پروژه را از متن پیشنهاد می‌خواند.\n// پورتال پیش از این، فیلد «عنوان» فرم را (اگر بود) بدون هوش مصنوعی برداشته و در heading_title فرستاده است.\nconst req = $input.first().json;\nif (!$env.AGENT_TOKEN || (req.headers || {})['x-agent-token'] !== $env.AGENT_TOKEN) {\n  throw new Error('Unauthorized: invalid X-Agent-Token');\n}\nconst body = req.body || {};\nconst text = String((body.document || {}).text || '').slice(0, 8000);\nconst heading = body.heading_title || null;\nconst resultPath = /^\\/api\\/agents\\/[\\w\\-\\/]+\\/$/.test(String(body.result_path || ''))\n  ? body.result_path\n  : `/api/agents/topic-extractions/${body.extraction_id}/result/`;\n\nconst system = [\n  'تو دستیار سامانه‌ی پروژه‌های کارشناسی دانشکده‌ی مهندسی کامپیوتر هستی.',\n  'ورودی: متن استخراج‌شده‌ی «فرم پیشنهاد پروژه» یک دانشجو.',\n  'وظیفه: عنوان (موضوع) پروژه را به فارسی و انگلیسی و حداکثر پنج کلیدواژه‌ی فارسی برگردان.',\n  'قواعد:',\n  '۱. اگر فرم فیلد «عنوان فارسی» یا «عنوان انگلیسی» دارد، مقدار همان فیلد را عیناً و بدون هیچ تغییری رونویسی کن.',\n  '۲. اگر عنوانی در متن نیست، از روی بخش «مقدمه» یک عنوان کوتاه (حداکثر ۱۵ واژه) بساز که دقیقاً موضوع همان متن باشد.',\n  '۳. چیزی از خودت به موضوع اضافه نکن و درباره‌ی کیفیت پیشنهاد نظر نده.',\n  '۴. اگر عنوان انگلیسی در متن نیست، title_en را خالی بگذار.',\n  'خروجی فقط یک شیء JSON با همین شکل باشد و هیچ متن دیگری ننویس:',\n  '{\"title_fa\": \"<عنوان فارسی>\", \"title_en\": \"<English title یا خالی>\", \"keywords\": [\"<کلیدواژه>\"]}',\n].join('\\n');\n\nreturn [\n  {\n    json: {\n      extraction_id: body.extraction_id,\n      result_path: resultPath,\n      heading,\n      text,\n      llm_request: {\n        model: $env.LLM_CHAT_MODEL,\n        temperature: 0,\n        stream: false,\n        response_format: { type: 'json_object' },\n        messages: [\n          { role: 'system', content: system },\n          { role: 'user', content: `متن پیشنهاد:\\n\"\"\"\\n${text}\\n\"\"\"` },\n        ],\n      },\n    },\n  },\n];"
+      },
+      "id": "db78c2ac-b737-5c97-bfc1-d24b8093fb7b",
+      "name": "Prepare Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.LLM_BASE_URL }}/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.LLM_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.llm_request) }}",
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "db34bbdc-0f91-5a34-9af3-fd0e16d57a5b",
+      "name": "LLM Extract Topic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// گام ۳ — خواندن پاسخ مدل. راستی‌آزمایی نهایی («آیا عنوان عیناً در متن آمده؟») را خود پورتال\n// انجام می‌دهد؛ این‌جا فقط JSON پاک می‌شود. اگر مدل پاسخ نداد، خطا به پورتال برمی‌گردد و عنوانِ\n// فیلد فرم (که پورتال از قبل ثبت کرده) سر جایش می‌ماند.\nconst prep = $('Prepare Prompt').first().json;\nconst res = $input.first().json;\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\nconst model = $env.LLM_CHAT_MODEL;\nlet result;\nif (!content) {\n  const err = res.error;\n  const detail = (err && (err.message || (typeof err === 'string' ? err : JSON.stringify(err)))) || 'پاسخ خالی از مدل';\n  result = { error: 'مدل زبانی پاسخ نداد؛ عنوان از فیلد «عنوان» فرم برداشته شد.', detail: String(detail).slice(0, 300), model };\n} else {\n  try {\n    const clean = String(content).replace(/<think>[\\s\\S]*?<\\/think>/g, '');\n    const parsed = JSON.parse(clean.slice(clean.indexOf('{'), clean.lastIndexOf('}') + 1));\n    result = {\n      title_fa: String(parsed.title_fa || '').trim().slice(0, 250),\n      title_en: String(parsed.title_en || '').trim().slice(0, 250),\n      keywords: (Array.isArray(parsed.keywords) ? parsed.keywords : []).map((k) => String(k).trim()).filter(Boolean).slice(0, 8),\n      model,\n    };\n    if (!result.title_fa) result = { error: 'مدل زبانی عنوانی برای پروژه پیدا نکرد.', model };\n  } catch (e) {\n    result = { error: 'خروجی مدل JSON معتبر نبود.', model };\n  }\n}\nreturn [{ json: { result_path: prep.result_path, result } }];"
+      },
+      "id": "1027a0c6-99a7-5325-ac54-b06ff128d990",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PORTAL_URL }}{{ $json.result_path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Agent-Token",
+              "value": "={{ $env.AGENT_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.result) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "42e3956a-e21b-55ff-8bea-3336d91ab063",
+      "name": "Send Result To Portal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM Extract Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Extract Topic": {
+      "main": [
+        [
+          {
+            "node": "Parse Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Result": {
+      "main": [
+        [
+          {
+            "node": "Send Result To Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

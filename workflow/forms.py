@@ -46,18 +46,67 @@ class JalaliDateField(forms.CharField):
 
 # ───────────────────────── پرونده و سند ─────────────────────────
 
+_CASE_WIDGETS = {
+    "title_en": forms.TextInput(attrs={"dir": "ltr"}),
+    "research_area": forms.TextInput(attrs={"placeholder": "مثلاً: هوش مصنوعی و پردازش زبان طبیعی"}),
+    "interests": forms.Textarea(attrs={
+        "rows": 4, "maxlength": services.MAX_INTERESTS_CHARS,
+        "placeholder": "مثلاً: به مدل‌های زبانی بزرگ و خودکارسازی فرایندهای اداری دانشگاه علاقه دارم "
+                       "و دوست دارم روی یک دستیار هوشمند کار کنم."}),
+}
+_CASE_HELP = {
+    "research_area": "یک یا چند حوزه؛ موضوع پروژه را لازم نیست بدانید.",
+    "interests": "سامانه با همین متن استادان راهنمای مرتبط را پیشنهاد می‌کند. موضوع دقیق پروژه پس از "
+                 "بارگذاری پیشنهاد، از متن آن استخراج می‌شود.",
+    "title_fa": "عنوان از متن پیشنهاد استخراج شده است؛ اگر درست نیست اصلاحش کنید. "
+                "عنوان اصلاح‌شده دیگر با بارگذاری‌های بعدی عوض نمی‌شود.",
+}
+
+
+def _need_area_or_interests(form):
+    data = form.cleaned_data
+    if "research_area" in form.fields and not (data.get("research_area") or "").strip() \
+            and not (data.get("interests") or "").strip():
+        raise ValidationError("حوزه‌ی مورد علاقه یا توضیحی از علایق خود را بنویسید.")
+
+
 class CaseCreateForm(forms.ModelForm):
+    """دانشجو موضوعی انتخاب نمی‌کند؛ فقط حوزه یا توضیح علایقش را می‌نویسد."""
+
     class Meta:
         model = ProjectCase
-        fields = ["title_fa", "title_en", "academic_year", "semester"]
-        widgets = {"title_en": forms.TextInput(attrs={"dir": "ltr"})}
+        fields = ["research_area", "interests", "academic_year", "semester"]
+        widgets = _CASE_WIDGETS
+        help_texts = _CASE_HELP
+
+    def clean(self):
+        super().clean()
+        _need_area_or_interests(self)
+        return self.cleaned_data
 
 
 class CaseEditForm(forms.ModelForm):
+    """فیلدها بسته به نقش و وضعیت (services.editable_fields) کم و زیاد می‌شوند."""
+
     class Meta:
         model = ProjectCase
-        fields = ["title_fa", "title_en"]
-        widgets = {"title_en": forms.TextInput(attrs={"dir": "ltr"})}
+        fields = ["title_fa", "title_en", "research_area", "interests"]
+        widgets = _CASE_WIDGETS
+        help_texts = _CASE_HELP
+
+    def __init__(self, *args, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        allowed = services.editable_fields(self.instance, user)
+        for name in list(self.fields):
+            if name not in allowed:
+                del self.fields[name]
+        if "title_fa" in self.fields:
+            self.fields["title_fa"].required = True
+
+    def clean(self):
+        super().clean()
+        _need_area_or_interests(self)
+        return self.cleaned_data
 
 
 def _max_size(file):

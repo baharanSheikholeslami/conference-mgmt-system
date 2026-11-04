@@ -127,7 +127,10 @@ class SuggestionRun(_AgentRun):
     """
     آخرین درخواست «تطبیق معنایی» برای یک پرونده؛ برای هر هدف (purpose) یک ردیف:
       • referee — پیشنهاد داور به مدیر گروه (موضوع = عنوان + مقدمه‌ی پیشنهاد)
-      • advisor — پیشنهاد استاد راهنما به دانشجو (موضوع = عنوان + علایقی که خود دانشجو نوشته)
+      • advisor — پیشنهاد استاد راهنما به دانشجو (متن = حوزه + علایقی که خود دانشجو هنگام ثبت پرونده
+        نوشته؛ دانشجو در این مرحله هنوز موضوعی ندارد)
+    اگر n8n یا مدل embedding در دسترس نباشد، پورتال رتبه‌بندی کلیدواژه‌ای را جایگزین می‌کند
+    (model = keyword-fallback).
     """
 
     class Purpose(models.TextChoices):
@@ -154,9 +157,9 @@ class SuggestionRun(_AgentRun):
         return f"{self.case} — {self.get_purpose_display()} — {self.get_status_display()}"
 
     @property
-    def interests(self):
-        """متنی که دانشجو برای پیشنهاد استاد راهنما نوشته است (آخرین سطر query، پس از عنوان‌ها)."""
-        return self.query.rsplit("\n", 1)[-1] if self.purpose == self.Purpose.ADVISOR else ""
+    def is_keyword(self):
+        """رتبه‌بندی پشتیبانِ کلیدواژه‌ای (بدون هوش مصنوعی) انجام شده است."""
+        return self.model == "keyword-fallback"
 
 
 class RefereeSuggestion(models.Model):
@@ -178,6 +181,36 @@ class RefereeSuggestion(models.Model):
     @property
     def percent(self):
         return None if self.score is None else round(max(0.0, min(1.0, self.score)) * 100)
+
+
+# ───────────────────────── ۳-ب. استخراج موضوع از پیشنهاد ─────────────────────────
+
+class TopicExtraction(_AgentRun):
+    """
+    خروجی عامل «استخراج موضوع» برای یک نسخه‌ی پیشنهاد. عنوانی که مدل زبانی از متن خوانده،
+    و این‌که آیا عیناً در متن سند آمده (verified). اگر applied باشد در پرونده نوشته شده است؛
+    دانشجو و استاد راهنما همیشه می‌توانند آن را اصلاح کنند.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "در حال استخراج"
+        DONE = "done", "استخراج شد"
+        ERROR = "error", "انجام نشد"
+
+    version = models.OneToOneField(DocumentVersion, on_delete=models.CASCADE, related_name="topic_extraction")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    title_fa = models.CharField("عنوان فارسی پیشنهادی", max_length=250, blank=True)
+    title_en = models.CharField("عنوان انگلیسی پیشنهادی", max_length=250, blank=True)
+    keywords = models.JSONField("کلیدواژه‌ها", default=list, blank=True)
+    verified = models.BooleanField("عنوان عیناً در متن آمده", default=False)
+    applied = models.BooleanField("در پرونده نوشته شد", default=False)
+
+    class Meta:
+        verbose_name = "استخراج موضوع"
+        verbose_name_plural = "استخراج‌های موضوع"
+
+    def __str__(self):
+        return f"{self.version} — {self.get_status_display()}"
 
 
 # ───────────────────────── ۴. اطلاع‌رسانی ─────────────────────────

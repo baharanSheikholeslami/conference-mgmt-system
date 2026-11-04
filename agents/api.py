@@ -16,7 +16,7 @@ from django.utils.crypto import constant_time_compare
 from django.views.decorators.csrf import csrf_exempt
 
 from . import services
-from .models import DocumentValidation, SuggestionRun
+from .models import DocumentValidation, SuggestionRun, TopicExtraction
 from .n8n import TOKEN_HEADER
 
 
@@ -57,6 +57,12 @@ def validation_result(request, data, pk):
 def referee_suggestions_result(request, data, pk):
     run = services.save_referee_suggestions(get_object_or_404(SuggestionRun, pk=pk), data)
     return {"status": run.status, "saved": run.suggestions.count()}
+
+
+@agent_api("POST")
+def topic_extraction_result(request, data, pk):
+    run = services.save_topic_result(get_object_or_404(TopicExtraction, pk=pk), data)
+    return {"status": run.status, "applied": run.applied, "verified": run.verified}
 
 
 @agent_api("POST")

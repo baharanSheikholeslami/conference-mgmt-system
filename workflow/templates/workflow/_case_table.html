@@ -7,7 +7,7 @@
   <tbody>
   {% for row in rows %}
     <tr>
-      <td data-label="عنوان پروژه"><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td data-label="عنوان پروژه"><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.display_title }}</a></td>
       <td data-label="نویسنده">{{ row.case.author }}</td>
       {% if not hide_roles %}<td data-label="نقش شما"><span>{% for role in row.roles %}<span class="badge plain">{{ role }}</span> {% empty %}—{% endfor %}</span></td>{% endif %}
       <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=row.case %}</td>

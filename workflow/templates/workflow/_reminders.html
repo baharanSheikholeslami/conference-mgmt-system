@@ -5,7 +5,7 @@
   {% for r in reminders %}
     <li>
       <div>
-        <a class="row-title" href="{% url 'case_detail' r.case.pk %}">{{ r.case.title_fa }}</a>
+        <a class="row-title" href="{% url 'case_detail' r.case.pk %}">{{ r.case.display_title }}</a>
         <div class="muted">{{ r.case.author }}{% if r.case.author.student_number %}، {{ r.case.author.student_number|fa }}{% endif %} — به‌عنوان {{ r.as|join:"، " }}</div>
         <div class="reminder-what">{{ r.what|join:"، " }}</div>
       </div>
