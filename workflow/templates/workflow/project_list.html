@@ -32,7 +32,7 @@
       <tr class="click-row">
         <td data-label="دانشجو"><a class="row-title" href="{% url 'case_detail' c.pk %}">{{ c.author }}</a>{% if c.author.user_type == "external" %}<br><small>نویسنده غیردانشجو</small>{% endif %}</td>
         <td data-label="شماره دانشجویی">{{ c.author.student_number|fa|default:"—" }}</td>
-        <td data-label="عنوان پروژه">{{ c.title_fa }}</td>
+        <td data-label="عنوان پروژه">{{ c.display_title }}</td>
         <td data-label="استاد راهنما">{{ c.advisor|default:"—" }}</td>
         <td data-label="نیم‌سال">{{ c.get_semester_display }} {{ c.academic_year|fa }}</td>
         <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=c %}</td>

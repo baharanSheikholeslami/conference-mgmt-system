@@ -8,7 +8,7 @@
 {% if suggestions %}{% include suggestions.template with run=suggestions.run rows=suggestions.rows %}{% endif %}
 <div class="card">
   <h1>{{ title }}</h1>
-  {% if case %}<p class="muted">{{ case.title_fa }} — <span class="badge plain">{{ case.get_state_display }}</span></p>{% endif %}
+  {% if case %}<p class="muted">{{ case.display_title }} — <span class="badge plain">{{ case.get_state_display }}</span></p>{% endif %}
   {% if intro %}<p class="form-intro">{{ intro }}</p>{% endif %}
   {% if template_file %}<p><a class="btn secondary compact" href="{% static template_file %}" download>دریافت قالب نمونه</a></p>{% endif %}
   <form method="post" class="stack"{% if multipart %} enctype="multipart/form-data"{% endif %}>

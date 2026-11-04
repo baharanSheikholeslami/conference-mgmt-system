@@ -100,14 +100,23 @@ class DashboardTests(PortalTestCase):
 class FormFlowTests(PortalTestCase):
     def test_student_creates_case_selects_advisor_uploads_and_submits(self):
         self.login(self.student)
+        # موضوع لازم نیست؛ بدون حوزه و علایق هم پرونده ثبت نمی‌شود
+        response = self.client.post(reverse("case_create"), {"academic_year": 1405, "semester": "first"})
+        self.assertContains(response, "حوزه‌ی مورد علاقه یا توضیحی از علایق خود را بنویسید")
+        self.assertNotContains(self.client.get(reverse("case_create")), 'name="title_fa"')
         response = self.client.post(reverse("case_create"), {
-            "title_fa": "سامانه‌ی آزمایشی", "title_en": "Test system",
+            "research_area": "سامانه‌های اطلاعاتی", "interests": "پایگاه‌داده و سامانه‌های اطلاعاتی دانشگاه",
             "academic_year": 1405, "semester": "first"})
         case = ProjectCase.objects.get()
-        self.assertRedirects(response, reverse("case_detail", args=[case.pk]))
+        self.assertEqual((case.title_fa, case.research_area), ("", "سامانه‌های اطلاعاتی"))
+        # پس از ثبت، مستقیم به انتخاب استاد با پیشنهاد سامانه می‌رود
+        self.assertRedirects(response, reverse("case_action", args=[case.pk, "select_advisor"]))
 
-        self.assertContains(self.client.get(reverse("case_action", args=[case.pk, "select_advisor"])),
-                            str(self.advisor))
+        page = self.client.get(reverse("case_action", args=[case.pk, "select_advisor"]))
+        self.assertContains(page, str(self.advisor))
+        self.assertContains(page, "پیشنهاد سامانه برای استاد راهنما")
+        self.assertContains(page, "تطبیق کلیدواژه‌ای")          # لایه‌ی عامل‌ها خاموش است
+        self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])), "موضوع پروژه هنوز تعیین نشده")
         self.post_action(case, "select_advisor", advisor=self.advisor.pk)
         case.refresh_from_db()
         self.assertEqual((case.state, case.advisor), (State.ADVISOR_PENDING, self.advisor))
@@ -214,12 +223,23 @@ class FormFlowTests(PortalTestCase):
         case.refresh_from_db()
         self.assertEqual((case.state, str(case.grade)), (State.COMPLETED, "17.75"))
 
-    def test_author_edits_title_only_while_drafting(self):
+    def test_author_edits_interests_then_title_and_advisor_corrects_title(self):
         case = self.new_case()
         self.login(self.student)
-        self.client.post(reverse("case_edit", args=[case.pk]), {"title_fa": "عنوان تازه", "title_en": ""})
+        # پیش از پذیرش استاد، فقط حوزه و علایق قابل‌ویرایش است (هنوز موضوعی نیست)
+        self.client.post(reverse("case_edit", args=[case.pk]),
+                         {"title_fa": "عنوان ممنوع", "research_area": "شبکه", "interests": ""})
         case.refresh_from_db()
-        self.assertEqual(case.title_fa, "عنوان تازه")
+        self.assertEqual((case.title_fa, case.research_area), ("", "شبکه"))
+        case = self.choose_advisor(case)
+        self.client.post(reverse("case_edit", args=[case.pk]),
+                         {"title_fa": "عنوان تازه", "title_en": "", "research_area": "شبکه", "interests": ""})
+        case.refresh_from_db()
+        self.assertEqual((case.title_fa, case.title_source), ("عنوان تازه", "manual"))
+        self.login(self.advisor)                    # استاد راهنما هم عنوان را اصلاح می‌کند
+        self.client.post(reverse("case_edit", args=[case.pk]), {"title_fa": "عنوان استاد", "title_en": "T"})
+        case.refresh_from_db()
+        self.assertEqual((case.title_fa, case.title_en, case.research_area), ("عنوان استاد", "T", "شبکه"))
         case = self.to_referee_review(author=self.external, referees=[self.ref1, self.ref2])
         self.login(self.external)
         self.assertEqual(self.client.get(reverse("case_edit", args=[case.pk])).status_code, 403)
@@ -346,16 +366,25 @@ class GuideScenarioTests(TestCase):
 
         self.client.force_login(sara)
         self.client.post(reverse("case_create"), {
-            "title_fa": "دستیار هوشمند پاسخ‌گویی به آیین‌نامه‌های آموزشی با مدل‌های زبانی بزرگ",
-            "title_en": "An LLM-based Assistant for Answering Academic Regulation Questions",
+            "research_area": "داده‌کاوی و پردازش زبان طبیعی",
+            "interests": "به سامانه‌های توصیه‌گر و پاسخ‌گویی خودکار به پرسش‌های دانشجویان علاقه دارم.",
             "academic_year": rules.current_term(timezone.localdate())[0],
             "semester": rules.current_term(timezone.localdate())[1]})
         case = ProjectCase.objects.get(author=sara)
-        self.assertEqual(case.state, State.ADVISOR_SELECTION)
+        self.assertEqual((case.state, case.title_fa), (State.ADVISOR_SELECTION, ""))
+        # سامانه از روی علایق، استادان مرتبط (پردازش زبان طبیعی؛ داده‌کاوی و سامانه‌های توصیه‌گر) را بالا می‌آورد
+        from agents import services as agents
+        ranks = agents.suggestion_ranks(case, "advisor", sara)
+        fallah = User.objects.get(username="soleiman.fallah")
+        self.assertEqual({ranks[fallah.pk], ranks[sharifi.pk]}, {1, 2})
 
         self.act("sara.nouri", case, "select_advisor", advisor=sharifi.pk)
         self.act("leila.sharifi", case, "advisor_accept")
         self.upload("sara.nouri", case, "proposal-sara-nouri.docx")
+        case.refresh_from_db()                      # موضوع از متن پیشنهاد استخراج و ثبت شد
+        self.assertEqual((case.title_fa, case.title_en, case.title_source),
+                         ("دستیار هوشمند پاسخ‌گویی به آیین‌نامه‌های آموزشی با مدل‌های زبانی بزرگ",
+                          "An LLM-based Assistant for Answering Academic Regulation Questions", "heading"))
         self.act("sara.nouri", case, "submit_proposal")
         self.sign("leila.sharifi", case, DocKind.PROPOSAL)
         self.act("maryam.salehi", case, "edu_register")

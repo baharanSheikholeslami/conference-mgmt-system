@@ -292,11 +292,14 @@ class ValidationTests(AgentTestCase):
 
     def test_case_page_shows_feedback_and_retry_button(self):
         case = self.drafting_case()
-        validation = self.upload(case).validation
+        version = self.upload(case)
+        validation = version.validation
         self.client.force_login(self.student)
         page = self.client.get(reverse("case_detail", args=[case.pk]))
         self.assertContains(page, "data-agent-waiting")
         self.api("api_validation_result", args=(validation.pk,), data={"found": self.found("schedule")})
+        self.api("api_topic_extraction_result", args=(version.topic_extraction.pk,),
+                 data={"title_fa": "سامانه هوشمند مدیریت کنفرانس"})
         page = self.client.get(reverse("case_detail", args=[case.pk]))
         self.assertContains(page, "۱ مورد نیازمند توجه")
         self.assertNotContains(page, "data-agent-waiting")
@@ -483,7 +486,8 @@ class RefereeSuggestionTests(AgentTestCase):
                        "expertise": "پایگاه‌داده و مهندسی نرم‌افزار"}, payload["candidates"])
         self.assertEqual(payload["purpose"], "referee")
         self.assertEqual(payload["result_path"], reverse("api_referee_suggestions_result", args=[run.pk]))
-        self.assertTrue(payload["query_text"].startswith("عنوان آزمایشی"))
+        # عنوان پرونده هنگام بارگذاری از فیلد «عنوان فارسی» فرم پیشنهاد استخراج شده است
+        self.assertTrue(payload["query_text"].startswith("سامانه هوشمند مدیریت کنفرانس"))
         self.assertIn("این پروژه یک سامانه‌ی چندعامله", payload["query_text"])   # ابتدای مقدمه
         self.assertNotIn("شماره دانشجویی", payload["query_text"])               # نه صفحه‌ی اول فرم
 
@@ -537,10 +541,13 @@ class RefereeSuggestionTests(AgentTestCase):
     def test_error_and_refresh(self):
         case = self.to_assignment()
         run = run_of(case)
-        self.api("api_referee_suggestions_result", args=(run.pk,), data={"error": "مدل embedding پاسخ نداد"})
+        self.api("api_referee_suggestions_result", args=(run.pk,), data={"error": "مدل embedding پاسخ نداد."})
+        run.refresh_from_db()
+        self.assertEqual((run.status, run.model), ("done", "keyword-fallback"))     # پشتیبان کلیدواژه‌ای
         self.client.force_login(self.head)
         page = self.client.get(reverse("case_action", args=[case.pk, "assign_referees"]))
         self.assertContains(page, "مدل embedding پاسخ نداد")
+        self.assertContains(page, "تطبیق کلیدواژه‌ای")
         url = reverse("suggestions_refresh", args=[case.pk])
         self.assertRedirects(self.client.post(url), reverse("case_action", args=[case.pk, "assign_referees"]))
         self.assertEqual(len(self.calls("suggest-referees")), 2)
@@ -553,7 +560,8 @@ class RefereeSuggestionTests(AgentTestCase):
     def test_n8n_being_down_does_not_block_the_head(self):
         self.n8n.side_effect = n8n.Unavailable("down")
         case = self.to_assignment()
-        self.assertEqual(run_of(case).status, "error")
+        run = run_of(case)
+        self.assertEqual((run.status, run.model), ("done", "keyword-fallback"))
         self.assertEqual(self.do(case, "assign_referees", self.head, referees=[self.ref1]).state,
                          State.REFEREE_REVIEW)
 
@@ -570,18 +578,22 @@ class AdvisorSuggestionTests(AgentTestCase):
 
     def test_student_interests_are_matched_against_all_faculty(self):
         self.client.force_login(self.student)
-        self.assertRedirects(self.client.post(self.url, {"interests": self.INTERESTS}), self.form_url)
+        self.assertRedirects(self.client.post(self.url, {"research_area": "هوش مصنوعی",
+                                                         "interests": self.INTERESTS}), self.form_url)
         (payload,) = self.calls("suggest-referees")
         run = run_of(self.case, "advisor")
         self.assertEqual((payload["purpose"], payload["run_id"], run.status), ("advisor", run.pk, "pending"))
-        self.assertTrue(payload["query_text"].endswith(self.INTERESTS))
-        self.assertEqual(run.interests, self.INTERESTS)
+        # دانشجو هنوز موضوعی ندارد: متن تطبیق فقط حوزه + علایق است
+        self.assertEqual(payload["query_text"], "هوش مصنوعی\n" + self.INTERESTS)
+        self.case.refresh_from_db()
+        self.assertEqual((self.case.research_area, self.case.interests, self.case.title_fa),
+                         ("هوش مصنوعی", self.INTERESTS, ""))
         # همه‌ی اعضای هیئت‌علمی (از هر گروه) نامزدند، نه فقط یک گروه
         self.assertEqual({c["id"] for c in payload["candidates"]},
                          {self.advisor.pk, self.ref1.pk, self.ref2.pk, self.head.pk, self.outsider.pk})
 
     def test_ranked_list_is_shown_but_the_student_chooses(self):
-        services.request_advisor_suggestions(self.case, self.INTERESTS)
+        services.request_advisor_suggestions(self.case, interests=self.INTERESTS)
         run = run_of(self.case, "advisor")
         self.api("api_referee_suggestions_result", args=(run.pk,), data={"suggestions": [
             {"referee_id": self.outsider.pk, "score": 0.91, "reason": "تخصص در عامل‌های هوشمند"},
@@ -602,7 +614,7 @@ class AdvisorSuggestionTests(AgentTestCase):
 
     def test_too_short_interests_and_wrong_people_are_rejected(self):
         self.client.force_login(self.student)
-        self.client.post(self.url, {"interests": "هوش"})
+        self.client.post(self.url, {"research_area": "", "interests": "ه"})
         self.assertEqual(self.calls("suggest-referees"), [])
         for user, status in ((self.advisor, 404), (self.edu, 403)):
             self.client.force_login(user)

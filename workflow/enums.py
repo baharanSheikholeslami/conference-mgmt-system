@@ -63,3 +63,16 @@ class DeadlineKind(models.TextChoices):
     DEFENSE_EARLIEST = "defense_earliest", "زودترین تاریخ مجاز دفاع"
     THESIS_DELIVERY = "thesis_delivery", "تحویل پایان‌نامه (۳ هفته پیش از مهلت نمره)"
     GRADE_ENTRY = "grade_entry", "مهلت درج نمره"
+
+
+class TitleSource(models.TextChoices):
+    """
+    عنوان پروژه از کجا آمده است. دانشجو هنگام ثبت پرونده عنوانی ندارد؛ عنوان پس از بارگذاری
+    پیشنهاد از متن آن استخراج می‌شود و دانشجو یا استاد راهنما می‌تواند آن را اصلاح کند.
+    عنوانِ «دستی» هرگز با استخراج خودکار بازنویسی نمی‌شود.
+    """
+    NONE = "", "هنوز تعیین نشده"
+    HEADING = "heading", "فیلد «عنوان» فرم پیشنهاد"
+    FIRST_LINE = "first_line", "نخستین سطر سند (حدسی)"
+    AI = "ai", "استخراج با هوش مصنوعی از متن پیشنهاد"
+    MANUAL = "manual", "ثبت یا اصلاح دستی"

@@ -25,14 +25,14 @@ from pgvector.django import CosineDistance
 from workflow import rules
 from workflow import services as wf
 from workflow import statemachine as sm
-from workflow.enums import CaseRole, DeadlineKind, DocKind, State, UserType
+from workflow.enums import CaseRole, DeadlineKind, DocKind, State, TitleSource, UserType
 from workflow.jalali import fa_digits, to_jalali
 from workflow.models import (CaseEvent, Deadline, DocumentVersion, ProjectCase, RefereeAssignment,
                              User)
 
-from . import checklist, chunking, extract, n8n
+from . import checklist, chunking, extract, keywords, n8n, topic
 from .models import (AssistantMessage, DocumentValidation, Notification, PolicyChunk,
-                     RefereeSuggestion, SuggestionRun)
+                     RefereeSuggestion, SuggestionRun, TopicExtraction)
 
 log = logging.getLogger("agents")
 
@@ -279,8 +279,8 @@ def _sources(raw):
 
 TOPIC_EXCERPT_CHARS = 2000
 EXPLAIN_TOP = 5
-MIN_INTERESTS_CHARS = 20
-MAX_INTERESTS_CHARS = 1500
+MIN_INTERESTS_CHARS = 3
+MAX_INTERESTS_CHARS = wf.MAX_AREA_CHARS + wf.MAX_INTERESTS_CHARS
 REFEREE, ADVISOR = SuggestionRun.Purpose.REFEREE, SuggestionRun.Purpose.ADVISOR
 # سطر عنوان «مقدمه»؛ شماره‌ی بخش در متن استخراج‌شده از PDF گاهی به انتهای سطر می‌افتد
 _INTRO_HEADING = re.compile(r"^[\d۰-۹.\-–) ]*مقدمه[\d۰-۹.\-–) ]*$", re.M)
@@ -308,28 +308,44 @@ def candidates_for(case, purpose):
     return wf.eligible_referees(case)
 
 
+def _candidate_rows(candidates):
+    return [{"id": u.pk, "name": str(u), "department": str(u.department or ""),
+             "expertise": u.expertise.strip()} for u in candidates]
+
+
+def _keyword_fallback(run, why=""):
+    """
+    رتبه‌بندی کلیدواژه‌ای در خود پورتال (بدون n8n و مدل). why دلیل استفاده از مسیر پشتیبان است
+    و به‌جای «خطا» به‌عنوان یادداشت روی پیشنهادها می‌ماند.
+    """
+    rows = keywords.rank(run.query, _candidate_rows(candidates_for(run.case, run.purpose)))
+    _store_suggestions(run, rows, keywords.MODEL_NAME, note=why)
+    return run
+
+
 def _request_suggestions(case, purpose, query):
     run = _restart(SuggestionRun, extra={"query": query}, case=case, purpose=purpose)
     candidates = list(candidates_for(case, purpose))
     if not candidates:
         return _finish(run, error="استاد واجد شرایطی در سامانه ثبت نشده است.")
+    if not enabled():
+        return _keyword_fallback(run)
     payload = {
         "run_id": run.pk,
         "purpose": purpose,
         # n8n نتیجه را به همین مسیر برمی‌گرداند
         "result_path": reverse("api_referee_suggestions_result", args=[run.pk]),
         "case": {"id": case.pk, "title_fa": case.title_fa, "title_en": case.title_en,
-                 "department": str(case.department or "")},
+                 "research_area": case.research_area, "department": str(case.department or "")},
         "query_text": query,
-        "candidates": [{"id": u.pk, "name": str(u), "department": str(u.department or ""),
-                        "expertise": u.expertise.strip()} for u in candidates],
+        "candidates": _candidate_rows(candidates),
         "explain_top": EXPLAIN_TOP,
     }
     try:
         n8n.post("suggest-referees", payload)
     except n8n.Unavailable as e:
         log.warning("suggest-referees (%s): %s", purpose, e)
-        return _finish(run, error="سرویس پیشنهاد استاد در دسترس نیست؛ کمی بعد دوباره تلاش کنید.")
+        return _keyword_fallback(run, "سرویس هوش مصنوعی در دسترس نبود؛ پیشنهادها با تطبیق کلیدواژه‌ای ساخته شد.")
     return run
 
 
@@ -338,32 +354,31 @@ def request_referee_suggestions(case):
     return _request_suggestions(case, REFEREE, topic_text(case))
 
 
-def request_advisor_suggestions(case, interests):
+def request_advisor_suggestions(case, research_area=None, interests=None, user=None):
     """
-    «گفتگوی ساختاریافته»ی بخش ۱ پروپوزال: دانشجو موضوع و علایق پژوهشی‌اش را می‌نویسد و سامانه
-    اساتید را بر پایه‌ی تطبیق با پروفایل تخصصی‌شان رتبه‌بندی می‌کند. انتخاب استاد با خود دانشجوست.
+    گام نخست جریان: دانشجو هنوز موضوعی ندارد؛ فقط حوزه یا توضیحی از علایقش نوشته است. سامانه
+    اساتید را بر پایه‌ی تطبیق همین متن با «زمینه‌های تخصصی» ثبت‌شده‌شان رتبه‌بندی می‌کند
+    (embedding در n8n، یا کلیدواژه‌ای اگر در دسترس نباشد). انتخاب استاد با خود دانشجوست.
+    اگر research_area/interests داده شود، ابتدا در پرونده ذخیره می‌شود (کادر «پیشنهاد دوباره»).
     """
-    interests = " ".join((interests or "").split())
-    if len(interests) < MIN_INTERESTS_CHARS:
-        raise AgentError("موضوع و علایق پژوهشی خود را دست‌کم در یکی دو جمله بنویسید.")
-    if len(interests) > MAX_INTERESTS_CHARS:
-        raise AgentError(f"متن علایق باید کوتاه‌تر از {fa_digits(MAX_INTERESTS_CHARS)} نویسه باشد.")
-    query = "\n".join(p for p in (case.title_fa, case.title_en, interests) if p)
-    return _request_suggestions(case, ADVISOR, query)
+    if research_area is not None or interests is not None:
+        try:
+            case = wf.edit_case(case, user or case.author,
+                                research_area=case.research_area if research_area is None else research_area,
+                                interests=case.interests if interests is None else interests)
+        except wf.WorkflowError as e:
+            raise AgentError(str(e)) from e
+    query = " ".join(case.interests_text.split())
+    if len(query) < MIN_INTERESTS_CHARS:
+        raise AgentError("حوزه‌ی مورد علاقه یا توضیحی از علایق پژوهشی خود را بنویسید.")
+    return _request_suggestions(case, ADVISOR, case.interests_text)
 
 
-def save_referee_suggestions(run, data):
-    """
-    پاسخ n8n: {"suggestions": [{"referee_id", "score", "reason"}], "model": "..."} یا {"error": "..."}
-    فقط اساتیدی ذخیره می‌شوند که واقعاً نامزد واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال از روی score می‌سازد.
-    """
-    model = str(data.get("model") or "")
-    if data.get("error"):
-        log.warning("suggestions %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
-        return _finish(run, error=str(data["error"]), model=model)
+def _store_suggestions(run, raw, model, note=""):
+    """فقط اساتیدی ذخیره می‌شوند که واقعاً نامزد واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال از روی score می‌سازد."""
     eligible = set(candidates_for(run.case, run.purpose).values_list("pk", flat=True))
     rows = {}
-    for s in data.get("suggestions") or []:
+    for s in raw or []:
         pk = s.get("referee_id") if isinstance(s, dict) else None
         if not isinstance(pk, int) or pk not in eligible or pk in rows:
             continue
@@ -376,13 +391,35 @@ def save_referee_suggestions(run, data):
         RefereeSuggestion.objects.bulk_create([
             RefereeSuggestion(run=run, referee_id=pk, rank=rank, score=score, reason=reason)
             for rank, (pk, (score, reason)) in enumerate(ordered, 1)])
-        _finish(run, status=SuggestionRun.Status.DONE, model=model)
+        _finish(run, status=SuggestionRun.Status.DONE, error=note, model=model)
     return run
+
+
+def save_referee_suggestions(run, data):
+    """
+    پاسخ n8n: {"suggestions": [{"referee_id", "score", "reason"}], "model": "..."} یا {"error": "..."}
+    اگر n8n خطا برگرداند (مثلاً مدل embedding پاسخ نداد)، رتبه‌بندی کلیدواژه‌ای جایگزین می‌شود.
+    """
+    model = str(data.get("model") or "")
+    if data.get("error"):
+        log.warning("suggestions %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
+        return _keyword_fallback(run, f"{str(data['error'])[:120]} پیشنهادها با تطبیق کلیدواژه‌ای ساخته شد.")
+    return _store_suggestions(run, data.get("suggestions"), model)
+
+
+def suggestions_visible_to(user, purpose=REFEREE):
+    """
+    پیشنهاد استاد راهنما بخشی از خود جریان ثبت پرونده است: اگر لایه‌ی عامل‌ها خاموش باشد هم با
+    رتبه‌بندی کلیدواژه‌ای نمایش داده می‌شود. فقط حالت سایه آن را از کاربران عادی پنهان می‌کند.
+    """
+    if purpose == ADVISOR and not enabled():
+        return True
+    return visible_to(user)
 
 
 def suggestion_ranks(case, purpose=REFEREE, user=None):
     """{شناسه‌ی استاد: رتبه} برای مرتب‌کردن فرم انتخاب؛ خالی اگر پیشنهادی آماده نباشد یا کاربر نبیند."""
-    if not visible_to(user):
+    if not suggestions_visible_to(user, purpose):
         return {}
     return dict(RefereeSuggestion.objects.filter(run__case=case, run__purpose=purpose,
                                                  run__status=SuggestionRun.Status.DONE)
@@ -391,7 +428,7 @@ def suggestion_ranks(case, purpose=REFEREE, user=None):
 
 def suggestion_panel(case, purpose=REFEREE, user=None):
     """داده‌ی کادر «پیشنهاد سامانه» در فرم انتخاب داور / استاد راهنما (یا None اگر نمایش داده نشود)."""
-    if not visible_to(user):
+    if not suggestions_visible_to(user, purpose):
         return None
     run = SuggestionRun.objects.filter(case=case, purpose=purpose).first()
     rows = list(run.suggestions.select_related("referee__department")) if run else []
@@ -405,7 +442,7 @@ def suggestion_panel(case, purpose=REFEREE, user=None):
     load = dict(busy.annotate(n=Count("id")))
     for row in rows:
         row.load = load.get(row.referee_id, 0)
-    return {"run": run, "rows": rows, "purpose": purpose,
+    return {"run": run, "rows": rows, "purpose": purpose, "case": case,
             "template": f"agents/_{purpose}_suggestions.html"}
 
 
@@ -415,6 +452,87 @@ def can_refresh_suggestions(case, user):
 
 def can_request_advisor_suggestions(case, user):
     return case.state == State.ADVISOR_SELECTION and user.id == case.author_id
+
+
+# ───────────────────────── ۳-ب. عامل استخراج موضوع از پیشنهاد ─────────────────────────
+# دانشجو هنگام ثبت پرونده موضوعی انتخاب نکرده است. پس از بارگذاری هر نسخه‌ی پیشنهاد:
+#   ۱. پورتال (بی‌درنگ و بدون هوش مصنوعی) فیلد «عنوان» فرم را در پرونده می‌نویسد (topic.title_from_text)
+#   ۲. این عامل متن را به n8n می‌دهد تا مدل زبانی عنوان فارسی/انگلیسی و چند کلیدواژه را بخواند
+#   ۳. پورتال بررسی می‌کند عنوانِ مدل عیناً در متن آمده باشد و طبق قاعده‌ی wf.apply_extracted_title
+#      آن را در پرونده می‌نویسد. عنوانی که دانشجو یا استاد اصلاح کرده هرگز بازنویسی نمی‌شود.
+
+TOPIC_TEXT_CHARS = 8000
+
+
+def request_topic_extraction(version):
+    """استخراج موضوع این نسخه‌ی پیشنهاد را از n8n می‌خواهد؛ نتیجه با save_topic_result می‌رسد."""
+    run = _restart(TopicExtraction, extra={"title_fa": "", "title_en": "", "keywords": [],
+                                           "verified": False, "applied": False}, version=version)
+    try:
+        text = extract.extract_text(version.file)
+    except extract.ExtractionError as e:
+        return _finish(run, error=str(e))
+    if len(text) < MIN_DOC_CHARS:
+        return _finish(run, error="متن قابل‌خواندنی در این فایل پیدا نشد؛ استخراج خودکار موضوع ممکن نیست.")
+    case = version.case
+    found = topic.title_from_text(text)
+    payload = {
+        "extraction_id": run.pk,
+        "result_path": reverse("api_topic_extraction_result", args=[run.pk]),
+        "case": {"id": case.pk, "research_area": case.research_area, "interests": case.interests},
+        "heading_title": {"title_fa": found.title_fa, "title_en": found.title_en} if found else None,
+        "document": {"version": version.number, "chars": len(text), "text": text[:TOPIC_TEXT_CHARS]},
+    }
+    try:
+        n8n.post("extract-topic", payload)
+    except n8n.Unavailable as e:
+        log.warning("extract-topic: %s", e)
+        return _finish(run, error="سرویس استخراج موضوع در دسترس نیست؛ عنوان از فیلد «عنوان» فرم برداشته شد.")
+    return run
+
+
+def save_topic_result(run, data):
+    """
+    پاسخ n8n: {"title_fa", "title_en", "keywords": [...], "model"} یا {"error", "detail"}.
+    عنوانی که مدل داده با متن سند راستی‌آزمایی می‌شود؛ در حالت سایه فقط ثبت می‌شود و در پرونده نمی‌نشیند.
+    """
+    model = str(data.get("model") or "")
+    if data.get("error"):
+        log.warning("topic %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
+        return _finish(run, error=str(data["error"]), model=model)
+    title_fa = " ".join(str(data.get("title_fa") or "").split())[:250]
+    title_en = " ".join(str(data.get("title_en") or "").split())[:250]
+    if len(title_fa) < topic.MIN_TITLE_CHARS:
+        return _finish(run, error="مدل زبانی عنوانی برای پروژه پیدا نکرد.", model=model)
+    try:
+        text = extract.extract_text(run.version.file)
+    except extract.ExtractionError:
+        text = ""
+    run.title_fa, run.title_en = title_fa, title_en
+    run.keywords = [str(k).strip()[:60] for k in (data.get("keywords") or []) if str(k).strip()][:8]
+    run.verified = topic.appears_in(title_fa, text)
+    if not shadow():
+        run.applied = wf.apply_extracted_title(run.version.case, title_fa, title_en, source=TitleSource.AI,
+                                               verified=run.verified, version=run.version)
+    return _finish(run, status=TopicExtraction.Status.DONE, model=model)
+
+
+def topic_panel(case, user):
+    """
+    کادر کوچک زیر عنوان پرونده: عنوان از کجا آمده و (برای نویسنده و استاد راهنما) خروجی عامل.
+    None اگر چیزی برای نمایش نیست.
+    """
+    if not case.title_source and not case.title_fa:
+        return None
+    version = wf.latest_version(case, DocKind.PROPOSAL)
+    run = TopicExtraction.objects.filter(version=version).first() if version else None
+    insider = user.id in (case.author_id, case.advisor_id) or user.is_superuser \
+        or user.user_type == UserType.EDU_STAFF
+    return {
+        "source": case.get_title_source_display() if case.title_source else "",
+        "run": run if run and insider and visible_to(user) else None,
+        "can_edit": wf.can_edit(case, user) and "title_fa" in wf.editable_fields(case, user),
+    }
 
 
 # ───────────────────────── ۴. محرک اطلاع‌رسانی ─────────────────────────
@@ -467,7 +585,7 @@ def _notification(key, user, case, subject, facts, sentences):
         "key": key, "to": to, "subject": subject[:250],
         "facts": {"recipient_name": str(user),
                   "recipient_roles": [r.label for r in sorted(case.roles_of(user))],
-                  "case_title": case.title_fa, "case_state": case.get_state_display(),
+                  "case_title": case.display_title, "case_state": case.get_state_display(),
                   "your_actions": actions, **facts},
         "fallback_body": "\n".join(lines),
         "footer": FOOTER.format(link=link),
@@ -494,8 +612,8 @@ def build_event_notifications(event):
     deadline = wf.next_deadline(case)
     facts = {"what_happened": happened,
              "next_deadline": _deadline_facts(deadline, today) if deadline else None}
-    subject = f"[سامانه پروژه] {case.get_state_display()} — {case.title_fa}"
-    sentences = [f"در پرونده‌ی «{case.title_fa}»، {happened}"]
+    subject = f"[سامانه پروژه] {case.get_state_display()} — {case.display_title}"
+    sentences = [f"در پرونده‌ی «{case.display_title}»، {happened}"]
     if deadline:
         sentences.append(f"نزدیک‌ترین مهلت: {deadline.get_kind_display()} — "
                          f"{to_jalali(deadline.due_date)} ({days_phrase(facts['next_deadline']['days_left'])}).")
@@ -552,7 +670,7 @@ def due_reminders(today=None):
                       .values_list("recipient_id", flat=True))
         people = [u for u in stakeholders(case) if pending_actions(case, u)] + [case.author]
         subject = f"[یادآوری مهلت] {facts['label']} — {facts['status']}"
-        sentences = [f"مهلت «{facts['label']}» برای پرونده‌ی «{case.title_fa}» "
+        sentences = [f"مهلت «{facts['label']}» برای پرونده‌ی «{case.display_title}» "
                      f"{facts['date']} است ({facts['status']})."]
         items += [_notification(f"reminder:{deadline.pk}:{stage}:{u.pk}", u, case, subject,
                                 {"deadline": facts}, sentences)
@@ -606,6 +724,13 @@ def _validate_on_upload(event):
             request_validation(version)
 
 
+def _topic_on_upload(event):
+    if event.action == f"upload_{DocKind.PROPOSAL}":
+        version = DocumentVersion.objects.filter(pk=event.data.get("version_id")).first()
+        if version:
+            request_topic_extraction(version)
+
+
 def _suggest_on_assignment(event):
     if event.to_state == State.REFEREE_ASSIGNMENT and event.from_state != event.to_state:
         request_referee_suggestions(event.case)
@@ -618,7 +743,7 @@ def handle_event(event_id):
     """
     event = CaseEvent.objects.select_related("case__author", "case__advisor", "case__department",
                                              "actor").get(pk=event_id)
-    for step in (_validate_on_upload, _suggest_on_assignment, notify_event):
+    for step in (_validate_on_upload, _topic_on_upload, _suggest_on_assignment, notify_event):
         try:
             step(event)
         except Exception:

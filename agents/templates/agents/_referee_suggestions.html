@@ -1,11 +1,12 @@
 {% load portal %}
 <section class="card agent-panel">
-  <h2>پیشنهاد سامانه برای داور <span class="agent-tag">هوش مصنوعی</span></h2>
+  <h2>پیشنهاد سامانه برای داور {% if run.is_keyword %}<span class="badge plain">تطبیق کلیدواژه‌ای</span>{% else %}<span class="agent-tag">هوش مصنوعی</span>{% endif %}</h2>
   {% if not run %}
     <p class="empty">هنوز پیشنهادی برای این پرونده درخواست نشده است.</p>
   {% elif run.is_waiting %}
     <p class="empty">در حال آماده‌سازی پیشنهاد… <a href="">تازه‌سازی صفحه</a></p>
   {% elif run.status == "done" and rows %}
+    {% if run.error %}<p class="agent-warning">{{ run.error }}</p>{% endif %}
     <ol class="suggestions">
     {% for row in rows %}
       <li>

@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from . import rules
 from . import statemachine as sm
-from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, State, UserType
+from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, State, TitleSource, UserType
 from .jalali import fa_digits, to_jalali
 from .models import (CaseEvent, Deadline, DocumentComment, DocumentVersion, ProjectCase,
                      RefereeAssignment, Review, Signature, User)
@@ -435,19 +435,24 @@ def _log(case, actor, action, from_state, note="", data=None):
 
 AUTHOR_TYPES = (UserType.STUDENT, UserType.EXTERNAL)
 EDITABLE_STATES = (State.ADVISOR_SELECTION, State.DRAFTING, State.REVISION)
+# استاد راهنما عنوانِ استخراج‌شده از پیشنهاد را تا پیش از ثبت در آموزش می‌تواند اصلاح کند
+ADVISOR_TITLE_STATES = (State.DRAFTING, State.ADVISOR_REVIEW, State.REVISION)
 UPLOAD_STATES = {
     DocKind.PROPOSAL: (State.DRAFTING, State.REVISION),
     DocKind.THESIS: (State.IN_PROGRESS,),
 }
 EXTRA_ACTION_LABELS = {
     "create_case": "ثبت پرونده",
-    "edit_case": "ویرایش عنوان پرونده",
+    "edit_case": "ویرایش مشخصات پرونده",
+    "extract_title": "ثبت عنوان استخراج‌شده از پیشنهاد",
     "upload_proposal": "بارگذاری نسخه‌ی پیشنهاد",
     "upload_thesis": "بارگذاری نسخه‌ی پایان‌نامه",
     # اقدام‌های حذف‌شده از گردش‌کار؛ فقط برای نمایش تاریخچه‌ی پرونده‌های قدیمی
     "group_approve": "تصویب پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
     "group_reject": "رد پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
 }
+MAX_AREA_CHARS = 200
+MAX_INTERESTS_CHARS = 1500
 
 
 def action_label(action):
@@ -459,8 +464,24 @@ def can_create_case(user):
     return user.user_type in AUTHOR_TYPES
 
 
+def editable_fields(case, user):
+    """
+    فیلدهای پرونده که این کاربر همین حالا می‌تواند ویرایش کند (خالی = هیچ).
+      • دانشجو پیش از پذیرش استاد فقط «حوزه و علایق» را دارد (هنوز موضوعی نیست)؛
+        پس از آن، عنوان (که از پیشنهاد استخراج شده) را هم می‌تواند اصلاح کند.
+      • استاد راهنما فقط عنوان را، از تدوین پیشنهاد تا پیش از ثبت در آموزش.
+    """
+    if user.id == case.author_id and case.state in EDITABLE_STATES:
+        if case.state == State.ADVISOR_SELECTION:
+            return ["research_area", "interests"]
+        return ["title_fa", "title_en", "research_area", "interests"]
+    if case.advisor_id and user.id == case.advisor_id and case.state in ADVISOR_TITLE_STATES:
+        return ["title_fa", "title_en"]
+    return []
+
+
 def can_edit(case, user):
-    return user.id == case.author_id and case.state in EDITABLE_STATES
+    return bool(editable_fields(case, user))
 
 
 def uploadable_kind(case, user):
@@ -470,10 +491,30 @@ def uploadable_kind(case, user):
     return next((kind for kind, states in UPLOAD_STATES.items() if case.state in states), None)
 
 
+def _clean_interests(research_area, interests):
+    research_area = " ".join((research_area or "").split())
+    interests = (interests or "").strip()
+    if len(research_area) > MAX_AREA_CHARS:
+        raise GuardFailed(f"حوزه باید کوتاه‌تر از {fa_digits(MAX_AREA_CHARS)} نویسه باشد.")
+    if len(interests) > MAX_INTERESTS_CHARS:
+        raise GuardFailed(f"توضیح علایق باید کوتاه‌تر از {fa_digits(MAX_INTERESTS_CHARS)} نویسه باشد.")
+    return research_area, interests
+
+
 @transaction.atomic
-def create_case(author, title_fa, title_en="", academic_year=None, semester=None):
+def create_case(author, research_area="", interests="", academic_year=None, semester=None,
+                title_fa="", title_en=""):
+    """
+    ثبت پرونده. دانشجو موضوعی انتخاب نمی‌کند: فقط حوزه یا توضیحی از علایقش می‌نویسد تا سامانه
+    استاد راهنما پیشنهاد کند؛ عنوان پس از بارگذاری پیشنهاد از متن آن استخراج می‌شود.
+    title_fa فقط برای داده‌های قدیمی/آزمون‌هاست و اگر داده شود «دستی» حساب می‌شود.
+    """
     if not can_create_case(author):
         raise NotAllowed("فقط دانشجو یا نویسنده غیردانشجو می‌تواند پرونده ثبت کند.")
+    research_area, interests = _clean_interests(research_area, interests)
+    title_fa, title_en = (title_fa or "").strip(), (title_en or "").strip()
+    if not (research_area or interests or title_fa):
+        raise GuardFailed("حوزه‌ی مورد علاقه یا توضیحی از علایق خود را بنویسید تا سامانه استاد راهنما پیشنهاد کند.")
     today = timezone.localdate()
     default_year, default_semester = rules.current_term(today)
     academic_year = academic_year or default_year
@@ -481,24 +522,99 @@ def create_case(author, title_fa, title_en="", academic_year=None, semester=None
     same_term = ProjectCase.objects.filter(author=author, academic_year=academic_year, semester=semester)
     if same_term.exclude(state__in=[State.REJECTED, State.CANCELLED]).exists():
         raise GuardFailed("شما در این نیم‌سال یک پرونده‌ی فعال دارید.")
-    case = ProjectCase.objects.create(author=author, title_fa=title_fa, title_en=title_en,
-                                      academic_year=academic_year, semester=semester,
-                                      registration_date=today)
+    case = ProjectCase.objects.create(
+        author=author, research_area=research_area, interests=interests,
+        title_fa=title_fa, title_en=title_en,
+        title_source=TitleSource.MANUAL if title_fa else TitleSource.NONE,
+        academic_year=academic_year, semester=semester, registration_date=today)
     case.sync_deadlines()
     _log(case, author, "create_case", case.state)
     return case
 
 
 @transaction.atomic
-def edit_case(case, user, title_fa, title_en=""):
+def edit_case(case, user, **fields):
     case = _locked(case)
-    if not can_edit(case, user):
-        raise NotAllowed("عنوان پرونده در این وضعیت قابل‌ویرایش نیست.")
-    old = {"title_fa": case.title_fa, "title_en": case.title_en}
-    case.title_fa, case.title_en = title_fa, title_en
+    allowed = editable_fields(case, user)
+    if not allowed:
+        raise NotAllowed("مشخصات پرونده در این وضعیت برای شما قابل‌ویرایش نیست.")
+    fields = {k: (v or "").strip() for k, v in fields.items() if k in allowed}
+    if "research_area" in fields or "interests" in fields:
+        fields["research_area"], fields["interests"] = _clean_interests(
+            fields.get("research_area", case.research_area), fields.get("interests", case.interests))
+    old = {k: getattr(case, k) for k in fields}
+    changed = {k: v for k, v in fields.items() if v != old[k]}
+    if not changed:
+        return case
+    for k, v in changed.items():
+        setattr(case, k, v)
+    if "title_fa" in changed or "title_en" in changed:
+        # عنوانی که انسان نوشته یا اصلاح کرده دیگر با استخراج خودکار عوض نمی‌شود
+        case.title_source = TitleSource.MANUAL if case.title_fa else TitleSource.NONE
     case.save()
-    _log(case, user, "edit_case", case.state, data={"old": old})
+    _log(case, user, "edit_case", case.state, data={"old": {k: old[k] for k in changed}})
     return case
+
+
+def _may_replace_title(case, source, verified=True):
+    """
+    قاعده‌ی بازنویسی عنوان با استخراج خودکار:
+      • عنوان دستی هرگز بازنویسی نمی‌شود
+      • فیلد «عنوان» فرم (heading) جای عنوان خالی، حدسی یا قبلی از همین نوع را می‌گیرد
+      • خروجی هوش مصنوعی فقط اگر در متن سند تأیید شده باشد، یا عنوان فعلی خالی/حدسی باشد
+    """
+    current = case.title_source
+    if current == TitleSource.MANUAL:
+        return False
+    if source == TitleSource.AI:
+        return verified or current in (TitleSource.NONE, TitleSource.FIRST_LINE)
+    if source == TitleSource.FIRST_LINE:
+        return current in (TitleSource.NONE, TitleSource.FIRST_LINE)
+    return True
+
+
+@transaction.atomic
+def apply_extracted_title(case, title_fa, title_en="", source=TitleSource.HEADING, verified=True,
+                          version=None, actor=None):
+    """
+    عنوانِ استخراج‌شده از متن پیشنهاد را در پرونده می‌نویسد (اگر _may_replace_title اجازه دهد).
+    وضعیت پرونده تغییر نمی‌کند؛ فقط یک رویداد «ثبت عنوان» در تاریخچه می‌ماند. خروجی: آیا نوشته شد؟
+    """
+    case = _locked(case)
+    title_fa = " ".join((title_fa or "").split())[:250]
+    title_en = " ".join((title_en or "").split())[:250]
+    if not title_fa or not _may_replace_title(case, source, verified):
+        return False
+    if version is not None and getattr(latest_version(case, DocKind.PROPOSAL), "pk", None) != version.pk:
+        return False          # نسخه‌ی تازه‌تری بارگذاری شده است؛ نتیجه‌ی کهنه نادیده گرفته می‌شود
+    if (title_fa, title_en, source) == (case.title_fa, case.title_en, case.title_source):
+        return False
+    old = {"title_fa": case.title_fa, "title_en": case.title_en, "title_source": case.title_source}
+    case.title_fa, case.title_en, case.title_source = title_fa, title_en, source
+    case.save(update_fields=["title_fa", "title_en", "title_source", "updated_at"])
+    data = {"old": old, "source": source, "verified": verified}
+    if version is not None:
+        data["version"] = version.number
+    _log(case, actor, "extract_title", case.state, data=data)
+    return True
+
+
+def _title_from_upload(case, version):
+    """
+    گام قطعی و بدون هوش مصنوعی: عنوان را از فیلد «عنوان فارسی/انگلیسی» فرم پیشنهاد برمی‌دارد
+    (یا، اگر چنین فیلدی نبود، از نخستین سطر عنوان‌مانند سند). عامل استخراج موضوع (n8n) بعداً
+    می‌تواند آن را دقیق‌تر کند. هر خطایی این‌جا فقط یعنی «عنوانی پیدا نشد».
+    """
+    from agents import extract, topic                 # وابستگی سبک؛ فقط استخراج متن
+    try:
+        text = extract.extract_text(version.file)
+    except extract.ExtractionError:
+        return False
+    found = topic.title_from_text(text)
+    if found is None:
+        return False
+    return apply_extracted_title(case, found.title_fa, found.title_en, source=found.source,
+                                 version=version)
 
 
 @transaction.atomic
@@ -511,6 +627,8 @@ def upload_document(case, user, kind, file, note=""):
                                              note=note, uploaded_by=user)
     _log(case, user, f"upload_{kind}", case.state, note,
          {"version": version.number, "version_id": version.pk})
+    if kind == DocKind.PROPOSAL:
+        _title_from_upload(case, version)
     return version
 
 

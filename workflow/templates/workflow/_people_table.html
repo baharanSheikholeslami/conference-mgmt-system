@@ -9,7 +9,7 @@
     <tr>
       <td data-label="دانشجو"><strong>{{ row.case.author }}</strong></td>
       <td data-label="شماره دانشجویی">{{ row.case.author.student_number|fa|default:"—" }}</td>
-      <td data-label="عنوان پروژه"><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.title_fa }}</a></td>
+      <td data-label="عنوان پروژه"><a class="row-title" href="{% url 'case_detail' row.case.pk %}">{{ row.case.display_title }}</a></td>
       <td data-label="نیم‌سال">{{ row.case.get_semester_display }} {{ row.case.academic_year|fa }}</td>
       {% if person == "referee" %}<td data-label="استاد راهنما">{{ row.case.advisor|default:"—" }}</td>{% endif %}
       <td data-label="وضعیت">{% include "workflow/_state_badge.html" with case=row.case %}</td>

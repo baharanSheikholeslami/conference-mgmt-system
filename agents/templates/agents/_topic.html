@@ -1,0 +1,21 @@
+{% load portal %}
+{# منبع عنوان پرونده و خروجی عامل استخراج موضوع؛ case و topic از case_detail می‌آیند #}
+<p class="topic-source">
+  {% if topic.source %}<span>منبع عنوان: {{ topic.source }}</span>{% endif %}
+  {% if topic.run %}
+    {% if topic.run.is_waiting %}
+      <span class="agent-tag">هوش مصنوعی</span><span data-agent-waiting>در حال استخراج موضوع از متن پیشنهاد…</span>
+    {% elif topic.run.status == "done" %}
+      <span class="agent-tag">هوش مصنوعی</span>
+      {% if topic.run.applied %}
+        <span>عنوان از متن پیشنهاد استخراج شد{% if not topic.run.verified %} (این عنوان عیناً در متن نیامده؛ لطفاً بررسی کنید){% endif %}.</span>
+      {% elif topic.run.title_fa != case.title_fa %}
+        <span>پیشنهاد عامل: «{{ topic.run.title_fa }}»{% if not topic.run.verified %} — عیناً در متن نیامده{% endif %}</span>
+      {% endif %}
+      {% for k in topic.run.keywords %}<span class="kw">{{ k }}</span>{% endfor %}
+    {% elif topic.run.status == "error" or topic.run.is_stale %}
+      <span>{% if topic.run.is_stale %}پاسخی از عامل استخراج موضوع نرسید.{% else %}{{ topic.run.error }}{% endif %}</span>
+    {% endif %}
+  {% endif %}
+  {% if topic.can_edit and case.title_source != "manual" %}<a href="{% url 'case_edit' case.pk %}">اصلاح عنوان</a>{% endif %}
+</p>

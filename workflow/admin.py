@@ -50,9 +50,11 @@ class EventInline(admin.TabularInline):
 
 @admin.register(ProjectCase)
 class ProjectCaseAdmin(admin.ModelAdmin):
-    list_display = ("title_fa", "author", "advisor", "co_advisor", "state", "academic_year", "semester")
-    list_filter = ("state", "semester", "department")
-    search_fields = ("title_fa", "title_en", "author__username", "author__last_name")
+    list_display = ("__str__", "author", "advisor", "co_advisor", "state", "title_source", "academic_year",
+                    "semester")
+    list_filter = ("state", "semester", "department", "title_source")
+    search_fields = ("title_fa", "title_en", "research_area", "interests", "author__username",
+                     "author__last_name")
     inlines = [RefereeInline, VersionInline, DeadlineInline, EventInline]
 
 
