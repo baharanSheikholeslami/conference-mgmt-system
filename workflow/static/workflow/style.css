@@ -434,6 +434,14 @@ form.stack fieldset label {
 form.stack fieldset label:hover { background: var(--surface-2); }
 form.stack fieldset label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 form.stack input[type=radio], form.stack input[type=checkbox] { accent-color: var(--accent); width: 1.05rem; height: 1.05rem; flex: none; }
+/* انتخاب زمان دفاع: هر روز یک گروه و ساعت‌هایش کنار هم */
+form.stack fieldset > div > div:has(> div) { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .9rem; }
+form.stack fieldset > div > div > label:first-child { flex-basis: 100%; font-weight: 500; border: 0; padding: 0; background: none; cursor: default; margin-bottom: 0; }
+form.stack fieldset > div > div > div label { display: inline-flex; padding: .45rem .6rem; gap: .4rem; margin-bottom: 0; font-size: .9rem; white-space: nowrap; }
+.defense-card .defense-result { margin: 0 0 .5rem; }
+.defense-card .facts { margin: .8rem 0; }
+ul.defense-people { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+ul.defense-people li { font-size: .92rem; }
 form.stack .actions { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
 .helptext { display: block; color: var(--muted); font-size: .84rem; margin-top: .3rem; }
 ul.errorlist { list-style: none; margin: 0 0 .35rem; padding: 0; color: var(--danger); font-size: .88rem; font-weight: 500; }

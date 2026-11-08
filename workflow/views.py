@@ -30,7 +30,7 @@ from .models import Deadline, DocumentVersion, ProjectCase, Signature
 STAGES = [State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.DRAFTING, State.ADVISOR_REVIEW,
           State.EDU_REGISTRATION, State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW,
           State.COUNCIL_APPROVAL, State.IN_PROGRESS, State.THESIS_ADVISOR_REVIEW,
-          State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED, State.COMPLETED]
+          State.THESIS_SUBMITTED, State.DEFENSE_REQUESTED, State.DEFENSE_SCHEDULED, State.COMPLETED]
 STAGE_OF = {state: i for i, state in enumerate(STAGES, 1)} | {
     State.REVISION: STAGES.index(State.REFEREE_REVIEW) + 1}
 
@@ -41,7 +41,7 @@ PHASES = [
     ("داوری و تصویب", (State.EDU_REGISTRATION, State.REFEREE_ASSIGNMENT, State.REFEREE_REVIEW,
                        State.REVISION, State.COUNCIL_APPROVAL)),
     ("اجرا و پایان‌نامه", (State.IN_PROGRESS, State.THESIS_ADVISOR_REVIEW)),
-    ("دفاع", (State.THESIS_SUBMITTED, State.DEFENSE_SCHEDULED)),
+    ("دفاع", (State.THESIS_SUBMITTED, State.DEFENSE_REQUESTED, State.DEFENSE_SCHEDULED)),
 ]
 PHASE_OF = {state: i for i, (_, states) in enumerate(PHASES) for state in states}
 
@@ -125,11 +125,17 @@ def _timers(rows, user):
 
 
 def _defense(case):
-    """کارت دفاع دانشجو: تاریخ و محل اگر تعیین شده، وگرنه زودترین تاریخ مجاز پس از تصویب."""
+    """
+    کارت دفاع دانشجو: روز، ساعت و محل اگر تعیین شده؛ «در انتظار انتخاب زمان استادان» اگر درخواست
+    دفاع باز است؛ وگرنه زودترین تاریخ مجاز پس از تصویب.
+    """
     if case is None or case.is_terminal:
         return None
     if case.defense_date:
-        return {"date": case.defense_date, "place": case.defense_place, "scheduled": True}
+        return {"date": case.defense_date, "place": case.defense_place, "scheduled": True,
+                "time": services.hour_label(case.defense_time.strftime("%H:%M")) if case.defense_time else ""}
+    if case.state == State.DEFENSE_REQUESTED:
+        return {"requested": True}
     earliest = next((d for d in case.deadlines.all() if d.kind == DeadlineKind.DEFENSE_EARLIEST), None)
     return {"date": earliest.due_date, "scheduled": False} if earliest else None
 
@@ -289,6 +295,9 @@ def _doc_boxes(case, user, offers, versions):
             "kind": kind, "label": DocKind(kind).label, "latest": latest, "older": mine[1:],
             "template": TEMPLATES[kind], "can_upload": upload_kind == kind, "submit": submit,
             "is_author": user.id == case.author_id,
+            # داور پایان‌نامه را فقط مشاهده می‌کند؛ تأیید آن با استاد راهنماست
+            "view_only": kind == DocKind.THESIS and latest is not None
+                         and CaseRole.REFEREE in case.roles_of(user),
             "signatures": list(latest.signatures.select_related("signer")) if latest else [],
             "signed": _signed_copy(latest) if latest else None,
             "format": _extension(latest.file.name).upper() if latest else "",
@@ -355,6 +364,8 @@ def case_detail(request, pk):
         "boxes": _doc_boxes(case, user, offers, versions),
         "panel": _panel(request, case, versions),
         "feedback": services.pending_feedback(case),
+        "defense": services.defense_schedule(case),
+        "defense_time": services.hour_label(case.defense_time.strftime("%H:%M")) if case.defense_time else "",
         "is_edu": services.sees_all_projects(user),
         "is_author": user.id == case.author_id,
         "assignments": case.referee_assignments.select_related("referee"),

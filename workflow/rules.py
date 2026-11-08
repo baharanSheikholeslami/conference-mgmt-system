@@ -17,6 +17,13 @@ MIN_MONTHS_APPROVAL_TO_DEFENSE = 3  # توضیح ۴: حداقل ۳ ماه بین
 THESIS_LEAD_WEEKS = 3               # توضیح ۴: پایان‌نامه حداقل ۳ هفته پیش از مهلت نمره
 REFEREES_FOR_STUDENT = 1
 REFEREES_FOR_NON_STUDENT = 2        # نویسنده غیردانشجو: حداقل دو داور
+# درخواست دفاع: دانشجو چند روز پیشنهاد می‌دهد و استاد راهنما و داور(ان) از میان ساعت‌های همان روزها
+# زمان‌های آزاد خود را انتخاب می‌کنند؛ سامانه نخستین زمانی را که برای همه آزاد است روز دفاع می‌کند.
+DEFENSE_MIN_DAYS = 2                # حداقل روزهای پیشنهادی در یک درخواست دفاع
+DEFENSE_MAX_DAYS = 5                # حداکثر روزهای پیشنهادی
+DEFENSE_HORIZON_DAYS = 60           # روزهای پیشنهادی حداکثر این تعداد روز پس از زودترین تاریخ ممکن باشند
+DEFENSE_TIME_SLOTS = ("09:00", "11:00", "14:00", "16:00")   # ساعت‌های شروع جلسه‌ی دفاع در هر روز
+NO_DEFENSE_WEEKDAYS = (4,)          # جمعه (weekday() پایتون: دوشنبه=۰ … جمعه=۴)
 REMINDER_DAYS = (14, 7, 3, 1, 0)    # فاز ۳: چند روز مانده به هر مهلت یادآوری فرستاده شود (۰ = روز مهلت)
 OVERDUE_REPEAT_DAYS = 7             # فاز ۳: پس از گذشتن مهلت، هشدار هر چند روز یک‌بار تکرار شود
 
@@ -27,6 +34,37 @@ def add_months(d: date, months: int) -> date:
     month = m % 12 + 1
     day = min(d.day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
+
+
+WEEKDAYS_FA = ("دوشنبه", "سه‌شنبه", "چهارشنبه", "پنجشنبه", "جمعه", "شنبه", "یکشنبه")
+
+
+def weekday_fa(d: date) -> str:
+    return WEEKDAYS_FA[d.weekday()]
+
+
+def earliest_defense_day(final_approved_at: date, today: date) -> date:
+    """زودترین روزی که دانشجو می‌تواند برای دفاع پیشنهاد دهد: امروز به بعد، و نه پیش از تصویب + ۳ ماه."""
+    if final_approved_at is None:
+        return today
+    return max(today, add_months(final_approved_at, MIN_MONTHS_APPROVAL_TO_DEFENSE))
+
+
+def slot_key(day: date, time: str) -> str:
+    """کلید یک زمان پیشنهادی، مثل 2027-01-10T09:00 (ترتیب الفبایی همان ترتیب زمانی است)."""
+    return f"{day.isoformat()}T{time}"
+
+
+def first_common_slot(choices):
+    """
+    choices: فهرستی از مجموعه‌ی زمان‌های انتخاب‌شده‌ی هر استاد (کلیدهای slot_key).
+    خروجی: زودترین زمانی که همه انتخاب کرده‌اند، یا None اگر زمان مشترکی نیست.
+    """
+    choices = [set(c) for c in choices]
+    if not choices:
+        return None
+    common = set.intersection(*choices)
+    return min(common) if common else None
 
 
 def countdown(due: date, today: date):

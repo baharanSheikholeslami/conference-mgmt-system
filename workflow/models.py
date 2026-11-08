@@ -82,6 +82,7 @@ class ProjectCase(models.Model):
     final_approved_at = models.DateField("تاریخ تصویب نهایی", null=True, blank=True)
     thesis_submitted_at = models.DateField("تاریخ تحویل پایان‌نامه", null=True, blank=True)
     defense_date = models.DateField("تاریخ دفاع", null=True, blank=True)
+    defense_time = models.TimeField("ساعت دفاع", null=True, blank=True)
     defense_place = models.CharField("محل دفاع", max_length=200, blank=True)
     grade = models.DecimalField("نمره", max_digits=4, decimal_places=2, null=True, blank=True)
 
@@ -278,6 +279,65 @@ class Review(models.Model):
             raise ValidationError("برای رأی «بازگشت جهت اصلاح» نظر مکتوب الزامی است.")
         if self.version.kind != DocKind.PROPOSAL or self.version.case_id != self.assignment.case_id:
             raise ValidationError("نسخه باید پیشنهادِ همین پرونده باشد.")
+
+
+class DefenseRequest(models.Model):
+    """
+    درخواست دفاع دانشجو: چند روز پیشنهادی و محل دفاع. استاد راهنما و داور(ان) هر کدام از میان
+    ساعت‌های این روزها زمان‌های آزاد خود را انتخاب می‌کنند (DefenseAvailability) و سامانه
+    زودترین زمانِ مشترک همه را روز و ساعت دفاع می‌کند.
+    """
+    class Status(models.TextChoices):
+        OPEN = "open", "در انتظار انتخاب زمان استادان"
+        SCHEDULED = "scheduled", "روز دفاع تعیین شد"
+        NO_MATCH = "no_match", "زمان مشترکی میان استادان پیدا نشد"
+
+    case = models.ForeignKey(ProjectCase, on_delete=models.CASCADE, related_name="defense_requests")
+    requested_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    days = models.JSONField("روزهای پیشنهادی", default=list,
+                            help_text="فهرست تاریخ‌های میلادی به‌صورت YYYY-MM-DD، به ترتیب زمانی")
+    place = models.CharField("محل دفاع", max_length=200)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    chosen_slot = models.CharField("زمان تعیین‌شده", max_length=16, blank=True,
+                                   help_text="کلید زمان، مثل 2027-01-10T09:00")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name = "درخواست دفاع"
+        verbose_name_plural = "درخواست‌های دفاع"
+        constraints = [models.UniqueConstraint(fields=["case"], condition=Q(status="open"),
+                                               name="one_open_defense_request_per_case")]
+
+    def day_list(self):
+        from datetime import date
+        return [date.fromisoformat(d) for d in self.days]
+
+    def slot_keys(self):
+        """همه‌ی زمان‌های قابل‌انتخاب: هر روز پیشنهادی × ساعت‌های rules.DEFENSE_TIME_SLOTS."""
+        return [rules.slot_key(d, t) for d in self.day_list() for t in rules.DEFENSE_TIME_SLOTS]
+
+    def __str__(self):
+        return f"درخواست دفاع {self.case}"
+
+
+class DefenseAvailability(models.Model):
+    """زمان‌هایی که یک استاد (راهنما یا داور) برای یک درخواست دفاع انتخاب کرده است."""
+    request = models.ForeignKey(DefenseRequest, on_delete=models.CASCADE, related_name="availabilities")
+    professor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="+")
+    role = models.CharField(max_length=10, choices=CaseRole.choices)
+    slots = models.JSONField("زمان‌های انتخاب‌شده", default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name = "زمان انتخابی استاد برای دفاع"
+        verbose_name_plural = "زمان‌های انتخابی استادان برای دفاع"
+        constraints = [models.UniqueConstraint(fields=["request", "professor"],
+                                               name="one_availability_per_professor")]
+
+    def __str__(self):
+        return f"{self.professor} ← {self.request}"
 
 
 class Deadline(models.Model):

@@ -187,25 +187,55 @@ class FormFlowTests(PortalTestCase):
         self.login(self.student)
         self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])), "منابع ناقص است")
 
-    def test_defense_date_is_entered_in_jalali_and_checked(self):
+    def test_defense_days_are_entered_in_jalali_and_professors_pick_times(self):
         case = self.to_in_progress()
         services.upload_document(case, self.student, DocKind.THESIS, pdf())
         case = services.perform(case, "submit_thesis", self.student)
         case = services.perform(case, "thesis_approve", self.advisor)
-        earliest = rules.add_months(case.final_approved_at, 3)
+        earliest = self.workday(rules.add_months(case.final_approved_at, 3))
+        second = self.workday(earliest + timedelta(days=1))
 
-        self.login(self.edu)
-        too_early = self.post_action(case, "schedule_defense", defense_place="کلاس ۲۰۲",
-                                     defense_date=to_jalali(case.final_approved_at))
+        self.login(self.edu)                                          # آموزش دیگر زمان دفاع را تعیین نمی‌کند
+        self.assertEqual(self.post_action(case, "request_defense").status_code, 403)
+        self.login(self.student)
+        form = self.client.get(reverse("case_action", args=[case.pk, "request_defense"]))
+        self.assertContains(form, "زودترین تاریخ مجاز")
+        too_early = self.post_action(case, "request_defense", place="کلاس ۲۰۲",
+                                     day_1=to_jalali(case.final_approved_at), day_2=to_jalali(second))
         self.assertContains(too_early, "زودترین تاریخ مجاز")
-        bad_format = self.post_action(case, "schedule_defense", defense_place="کلاس ۲۰۲",
-                                      defense_date="2027-01-10x")
-        self.assertTrue(bad_format.context["form"].errors["defense_date"])
+        bad_format = self.post_action(case, "request_defense", place="کلاس ۲۰۲",
+                                      day_1="2027-01-10x", day_2=to_jalali(second))
+        self.assertTrue(bad_format.context["form"].errors["day_1"])
+        same = self.post_action(case, "request_defense", place="کلاس ۲۰۲",
+                                day_1=to_jalali(second), day_2=to_jalali(second))
+        self.assertContains(same, "فقط یک بار")
 
-        self.post_action(case, "schedule_defense", defense_place="کلاس ۲۰۲",
-                         defense_date=to_jalali(earliest))            # با ارقام فارسی
+        self.post_action(case, "request_defense", place="کلاس ۲۰۲",
+                         day_1=to_jalali(earliest), day_2=to_jalali(second, fa=False))   # ارقام فارسی و لاتین
         case.refresh_from_db()
-        self.assertEqual((case.state, case.defense_date), (State.DEFENSE_SCHEDULED, earliest))
+        self.assertEqual(case.state, State.DEFENSE_REQUESTED)
+
+        # استاد راهنما: فرم با روزهای پیشنهادی و ساعت‌ها؛ تا انتخاب داور، روز دفاع تعیین نمی‌شود
+        self.login(self.advisor)
+        page = self.client.get(reverse("case_action", args=[case.pk, "advisor_pick_defense_time"]))
+        self.assertContains(page, to_jalali(earliest))
+        self.assertContains(page, "۹:۰۰")
+        late = rules.slot_key(second, rules.DEFENSE_TIME_SLOTS[2])
+        self.post_action(case, "advisor_pick_defense_time",
+                         slots=[rules.slot_key(earliest, rules.DEFENSE_TIME_SLOTS[1]), late])
+        case.refresh_from_db()
+        self.assertEqual(case.state, State.DEFENSE_REQUESTED)
+        self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])), "زمان‌هایش را انتخاب کرد")
+
+        self.login(self.ref1)
+        self.assertContains(self.post_action(case, "referee_pick_defense_time", slots=[]), "errorlist")
+        self.post_action(case, "referee_pick_defense_time", slots=[late])
+        case.refresh_from_db()
+        self.assertEqual((case.state, case.defense_date, case.defense_time.strftime("%H:%M"), case.defense_place),
+                         (State.DEFENSE_SCHEDULED, second, rules.DEFENSE_TIME_SLOTS[2], "کلاس ۲۰۲"))
+        earliest = case.defense_date
+        self.login(self.edu)
+        self.assertContains(self.client.get(reverse("case_detail", args=[case.pk])), "روز دفاع تعیین شد")
 
         # تا روز دفاع: دکمه‌ی نمره غیرفعال است و پرونده در «در انتظار اقدام» استاد راهنما نیست
         self.login(self.advisor)
@@ -277,7 +307,7 @@ class SeedDemoFullTests(TestCase):
         self.run_seed("--full")
         self.run_seed("--full")
         states = set(ProjectCase.objects.values_list("state", flat=True))
-        self.assertEqual(ProjectCase.objects.count(), base + 9)
+        self.assertEqual(ProjectCase.objects.count(), base + 10)
         self.assertEqual(states, set(State) - {State.ADVISOR_SELECTION, State.COMPLETED,
                                                  State.REJECTED, State.CANCELLED})
 
@@ -399,9 +429,21 @@ class GuideScenarioTests(TestCase):
         self.sign("leila.sharifi", case, DocKind.THESIS)
 
         call_command("backdate_case", str(case.pk), "--days", "120", stdout=StringIO())
-        self.act("maryam.salehi", case, "schedule_defense",
-                 defense_date=to_jalali(timezone.localdate(), fa=False), defense_place="کلاس ۲۰۱ دانشکده")
-        self.act("leila.sharifi", case, "record_result", grade="18.5")
+        # دانشجو دو روز پیشنهاد می‌دهد (امروز، یا اگر جمعه است فردا)؛ راهنما و داور ساعت ۹ روز اول را برمی‌گزینند
+        today = timezone.localdate()
+        first = today + timedelta(days=1) if today.weekday() in rules.NO_DEFENSE_WEEKDAYS else today
+        second = first + timedelta(days=2 if (first + timedelta(days=1)).weekday() in rules.NO_DEFENSE_WEEKDAYS else 1)
+        self.act("sara.nouri", case, "request_defense", day_1=to_jalali(first, fa=False),
+                 day_2=to_jalali(second, fa=False), place="کلاس ۲۰۱ دانشکده")
+        slot = rules.slot_key(first, rules.DEFENSE_TIME_SLOTS[0])
+        self.act("leila.sharifi", case, "advisor_pick_defense_time", slots=[slot])
+        self.act("hossein.mousavi", case, "referee_pick_defense_time", slots=[slot])
+        case.refresh_from_db()
+        self.assertEqual((case.state, case.defense_date, case.defense_place),
+                         (State.DEFENSE_SCHEDULED, first, "کلاس ۲۰۱ دانشکده"))
+        from unittest import mock
+        with mock.patch("django.utils.timezone.localdate", return_value=first):
+            self.act("leila.sharifi", case, "record_result", grade="18.5")
         case.refresh_from_db()
         self.assertEqual((case.state, float(case.grade)), (State.COMPLETED, 18.5))
 

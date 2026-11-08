@@ -10,6 +10,8 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from . import rules, services
+from . import statemachine as sm
+from .jalali import to_jalali
 from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, Semester, State, UserType
 from .models import CaseEvent, Department, ProjectCase, User
 
@@ -84,6 +86,27 @@ class WorkflowTestCase(TestCase):
         case = self.do(case, "edu_register", self.edu)
         return self.do(case, "assign_referees", self.head, referees=referees or [self.ref1])
 
+    @staticmethod
+    def workday(day):
+        """نخستین روزِ غیرتعطیل (نه جمعه) از day به بعد."""
+        while day.weekday() in rules.NO_DEFENSE_WEEKDAYS:
+            day += timedelta(days=1)
+        return day
+
+    def schedule_defense(self, case, day=None, place="کلاس ۱۰۱"):
+        """
+        جریان تازه‌ی دفاع: دانشجو دو روز پیشنهاد می‌دهد و استاد راهنما و همه‌ی داوران نخستین ساعتِ
+        روز اول را انتخاب می‌کنند؛ پس روز دفاع همان روز اول (یا نخستین روز کاری پس از آن) است.
+        """
+        day = self.workday(day or rules.earliest_defense_day(case.final_approved_at, timezone.localdate()))
+        case = self.do(case, "request_defense", case.author, days=[day, self.workday(day + timedelta(days=1))],
+                       place=place)
+        slot = rules.slot_key(day, rules.DEFENSE_TIME_SLOTS[0])
+        for user, role in services.defense_professors(case):
+            action = "advisor_pick_defense_time" if role == CaseRole.ADVISOR else "referee_pick_defense_time"
+            case = self.do(case, action, user, slots=[slot])
+        return case
+
     def to_in_progress(self):
         case = self.to_referee_review()
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
@@ -117,9 +140,9 @@ class HappyPathTests(WorkflowTestCase):
         services.upload_document(case, self.student, DocKind.THESIS, pdf("thesis.pdf"))
         case = self.do(case, "submit_thesis", self.student)
         case = self.do(case, "thesis_approve", self.advisor)
-        defense = rules.add_months(case.final_approved_at, 3)
-        case = self.do(case, "schedule_defense", self.edu, defense_date=defense,
-                       defense_place="کلاس ۱۰۱")
+        case = self.schedule_defense(case)
+        defense = case.defense_date
+        self.assertEqual(case.state, State.DEFENSE_SCHEDULED)
         with self.on(defense):                                       # روز دفاع
             case = self.do(case, "record_result", self.advisor, grade="18.5")
 
@@ -229,8 +252,9 @@ class GuardTests(WorkflowTestCase):
         services.upload_document(case, self.external, DocKind.THESIS, pdf())
         case = self.do(case, "submit_thesis", self.external)
         case = self.do(case, "thesis_approve", self.advisor)
-        defense = rules.add_months(case.final_approved_at, 4)
-        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن", defense_date=defense)
+        case = self.schedule_defense(case, rules.add_months(case.final_approved_at, 4), place="سالن")
+        self.assertEqual(case.events.filter(action="referee_pick_defense_time").count(), 2)   # هر دو داور
+        defense = case.defense_date
         with self.on(defense + timedelta(days=1)):
             with self.assertRaises(services.GuardFailed):
                 self.do(case, "record_result", self.advisor, grade="19")
@@ -271,14 +295,15 @@ class GuardTests(WorkflowTestCase):
         services.upload_document(case, self.student, DocKind.THESIS, pdf())
         case = self.do(case, "submit_thesis", self.student)
         case = self.do(case, "thesis_approve", self.advisor)
-        earliest = rules.add_months(case.final_approved_at, 3)
+        earliest = self.workday(rules.add_months(case.final_approved_at, 3))
+        later = self.workday(earliest + timedelta(days=1))
         with self.assertRaises(services.GuardFailed):
-            self.do(case, "schedule_defense", self.edu, defense_place="سالن",
-                    defense_date=earliest - timedelta(days=1))
+            self.do(case, "request_defense", self.student, place="سالن",
+                    days=[earliest - timedelta(days=1), later])
         with self.assertRaises(services.GuardFailed):               # بدون محل
-            self.do(case, "schedule_defense", self.edu, defense_date=earliest)
-        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن",
-                       defense_date=earliest)
+            self.do(case, "request_defense", self.student, days=[earliest, later])
+        case = self.schedule_defense(case, earliest, place="سالن")
+        self.assertEqual(case.defense_date, earliest)
         with self.on(earliest):
             with self.assertRaises(services.GuardFailed):
                 self.do(case, "record_result", self.advisor, grade="21")
@@ -290,8 +315,8 @@ class GuardTests(WorkflowTestCase):
         services.upload_document(case, self.student, DocKind.THESIS, pdf())
         case = self.do(case, "submit_thesis", self.student)
         case = self.do(case, "thesis_approve", self.advisor)
-        defense = rules.add_months(case.final_approved_at, 3)
-        case = self.do(case, "schedule_defense", self.edu, defense_place="سالن", defense_date=defense)
+        case = self.schedule_defense(case, place="سالن")
+        defense = case.defense_date
 
         with self.on(defense - timedelta(days=1)):
             offer = services.available_actions(case, self.advisor)[0]
@@ -490,3 +515,136 @@ class CountdownTests(TestCase):
         self.assertEqual(rules.countdown(today, today), (0, 0, False))
         self.assertEqual(rules.countdown(today - timedelta(days=1), today), (0, 1, True))
         self.assertEqual(rules.countdown(today + timedelta(days=11), today), (0, 11, False))
+
+
+class DefenseSchedulingTests(WorkflowTestCase):
+    """
+    جریان تازه‌ی دفاع: تأیید پایان‌نامه فقط با استاد راهنماست و پایان‌نامه برای مشاهده به آموزش و
+    داور(ان) می‌رود؛ دانشجو چند روز پیشنهاد می‌دهد، هر استاد زمان‌های آزادش را انتخاب می‌کند و
+    سامانه زودترین زمان مشترک را روز دفاع اعلام می‌کند.
+    """
+
+    def to_thesis_submitted(self, referees=None):
+        case = self.to_referee_review(referees=referees)
+        for ref in referees or [self.ref1]:
+            case = self.do(case, "submit_review", ref, decision=ReviewDecision.APPROVE)
+        case = self.do(case, "council_approve", self.edu)
+        services.upload_document(case, self.student, DocKind.THESIS, pdf("thesis.pdf"))
+        return self.do(case, "submit_thesis", self.student)
+
+    def days(self, case, n=3):
+        day = self.workday(rules.earliest_defense_day(case.final_approved_at, timezone.localdate()))
+        days = [day]
+        while len(days) < n:
+            days.append(self.workday(days[-1] + timedelta(days=1)))
+        return days
+
+    def test_referee_only_views_the_thesis_after_advisor_approval(self):
+        case = self.to_thesis_submitted()
+        thesis = services.latest_version(case, DocKind.THESIS)
+        self.assertFalse(services.can_download(case, self.ref1, thesis))       # هنوز تأیید نشده
+        self.assertNotIn(thesis, services.visible_versions(case, self.ref1))
+        self.assertEqual([o.transition.action for o in services.available_actions(case, self.ref1)], [])
+
+        case = self.do(case, "thesis_approve", self.advisor)
+        self.assertEqual(case.state, State.THESIS_SUBMITTED)                   # بدون رأی داور
+        for user in (self.ref1, self.edu):
+            self.assertTrue(services.can_download(case, user, thesis), user.username)
+            self.assertFalse(services.is_pending_for(case, user), user.username)
+        self.assertFalse(services.can_comment(case, self.ref1, thesis))        # داور فقط مشاهده می‌کند
+        self.assertTrue(services.can_comment(case, self.advisor, thesis))
+        self.assertTrue(services.is_pending_for(case, self.student))           # نوبت درخواست دفاع
+        self.assertNotIn("schedule_defense", sm.TRANSITIONS)
+
+    def test_first_common_slot_of_all_professors_becomes_the_defense(self):
+        case = self.do(self.to_thesis_submitted([self.ref1, self.ref2]), "thesis_approve", self.advisor)
+        d1, d2, d3 = self.days(case)
+        case = self.do(case, "request_defense", self.student, days=[d3, d1, d2], place="کلاس ۳۰۱")
+        self.assertEqual(case.state, State.DEFENSE_REQUESTED)
+        key = lambda d, i: rules.slot_key(d, rules.DEFENSE_TIME_SLOTS[i])      # noqa: E731
+        self.assertEqual(services.open_defense_request(case).days, [d.isoformat() for d in (d1, d2, d3)])
+
+        for user in (self.advisor, self.ref1, self.ref2):
+            self.assertTrue(services.is_pending_for(case, user), user.username)
+        with self.assertRaises(services.NotAllowed):                           # راهنما نقش داور ندارد
+            self.do(case, "referee_pick_defense_time", self.advisor, slots=[key(d1, 0)])
+        with self.assertRaises(services.GuardFailed):                          # زمانی خارج از پیشنهادها
+            self.do(case, "advisor_pick_defense_time", self.advisor,
+                    slots=[rules.slot_key(d1 - timedelta(days=1), "09:00")])
+
+        case = self.do(case, "advisor_pick_defense_time", self.advisor, slots=[key(d1, 0), key(d2, 1), key(d3, 3)])
+        case = self.do(case, "referee_pick_defense_time", self.ref1, slots=[key(d2, 1), key(d3, 3)])
+        self.assertEqual(case.state, State.DEFENSE_REQUESTED)                  # داور دوم هنوز انتخاب نکرده
+        self.assertFalse(services.is_pending_for(case, self.ref1))
+        with self.assertRaises(services.GuardFailed):                          # انتخاب دوباره
+            self.do(case, "referee_pick_defense_time", self.ref1, slots=[key(d2, 1)])
+        case = self.do(case, "referee_pick_defense_time", self.ref2, slots=[key(d3, 3), key(d2, 1), key(d1, 2)])
+
+        self.assertEqual((case.state, case.defense_date, case.defense_time.strftime("%H:%M"), case.defense_place),
+                         (State.DEFENSE_SCHEDULED, d2, rules.DEFENSE_TIME_SLOTS[1], "کلاس ۳۰۱"))
+        schedule = services.defense_schedule(case)
+        self.assertIn(to_jalali(d2), schedule["chosen"])
+        self.assertTrue(all(p["answered"] for p in schedule["people"]))
+        self.assertEqual(case.events.last().data["defense_date"], d2.isoformat())
+
+    def test_no_common_slot_sends_the_case_back_to_the_student(self):
+        case = self.do(self.to_thesis_submitted(), "thesis_approve", self.advisor)
+        d1, d2 = self.days(case, 2)
+        case = self.do(case, "request_defense", self.student, days=[d1, d2], place="سالن")
+        case = self.do(case, "advisor_pick_defense_time", self.advisor, slots=[rules.slot_key(d1, "09:00")])
+        case = self.do(case, "referee_pick_defense_time", self.ref1, slots=[rules.slot_key(d2, "09:00")])
+        self.assertEqual((case.state, case.defense_date), (State.THESIS_SUBMITTED, None))
+        feedback = services.pending_feedback(case)
+        self.assertIn("زمان مشترکی", feedback["title"])
+        self.assertEqual(len(feedback["items"]), 2)
+        self.assertIsNone(services.open_defense_request(case))
+
+        d3 = self.workday(d2 + timedelta(days=1))
+        case = self.do(case, "request_defense", self.student, days=[d2, d3], place="سالن")
+        self.assertIsNone(services.pending_feedback(case))
+        self.assertTrue(services.is_pending_for(case, self.advisor))           # درخواست تازه، انتخاب تازه
+        case = self.do(case, "advisor_pick_defense_time", self.advisor, slots=[rules.slot_key(d3, "16:00")])
+        case = self.do(case, "referee_pick_defense_time", self.ref1, slots=[rules.slot_key(d3, "16:00")])
+        self.assertEqual((case.state, case.defense_date), (State.DEFENSE_SCHEDULED, d3))
+        self.assertEqual(case.defense_requests.count(), 2)
+
+    def test_defense_request_rules(self):
+        case = self.do(self.to_thesis_submitted(), "thesis_approve", self.advisor)
+        d1, d2, d3 = self.days(case)
+        friday = d1 + timedelta(days=(4 - d1.weekday()) % 7)
+        too_far = rules.earliest_defense_day(case.final_approved_at, timezone.localdate()) + timedelta(
+            days=rules.DEFENSE_HORIZON_DAYS + 7)
+        for days in ([d1], [d1, d1], [d1, friday], [d1, self.workday(too_far)],
+                     [self.workday(d1 + timedelta(days=i)) for i in range(0, 12, 2)]):
+            with self.assertRaises(services.GuardFailed, msg=str(days)):
+                self.do(case, "request_defense", self.student, days=days, place="سالن")
+        with self.assertRaises(services.GuardFailed):
+            self.do(case, "request_defense", self.student, days=[d1, d2], place="  ")
+        with self.assertRaises(services.NotAllowed):
+            self.do(case, "request_defense", self.advisor, days=[d1, d2], place="سالن")
+        self.assertEqual(case.defense_requests.count(), 0)
+
+    def test_edu_and_referees_are_informed_of_the_thesis_and_the_defense(self):
+        from agents import services as agents
+        self.edu.email, self.ref1.email, self.advisor.email, self.student.email = (
+            "edu@x.ir", "ref1@x.ir", "adv@x.ir", "st@x.ir")
+        for u in (self.edu, self.ref1, self.advisor, self.student):
+            u.save()
+        case = self.do(self.to_thesis_submitted(), "thesis_approve", self.advisor)
+        to = lambda event: {i["key"].rsplit(":", 1)[1] for i in agents.build_event_notifications(event)}  # noqa: E731
+        approve = case.events.get(action="thesis_approve")
+        self.assertEqual(to(approve), {str(self.edu.pk), str(self.ref1.pk), str(self.student.pk)})
+
+        d1, d2 = self.days(case, 2)
+        case = self.do(case, "request_defense", self.student, days=[d1, d2], place="کلاس ۱۰۱")
+        slot = rules.slot_key(d2, "11:00")
+        case = self.do(case, "advisor_pick_defense_time", self.advisor, slots=[slot])
+        case = self.do(case, "referee_pick_defense_time", self.ref1, slots=[slot])
+        scheduled = case.events.last()
+        items = agents.build_event_notifications(scheduled)
+        self.assertEqual({i["key"].rsplit(":", 1)[1] for i in items},
+                         {str(self.edu.pk), str(self.advisor.pk), str(self.student.pk)})   # داور خودش اقدام کرد
+        edu_mail = next(i for i in items if i["key"].endswith(f":{self.edu.pk}"))
+        self.assertIn(to_jalali(d2), edu_mail["fallback_body"])
+        self.assertIn("کلاس ۱۰۱", edu_mail["fallback_body"])
+        self.assertEqual(edu_mail["facts"]["defense"]["place"], "کلاس ۱۰۱")
