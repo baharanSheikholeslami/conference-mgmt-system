@@ -123,7 +123,7 @@ docker compose ps        # سه سرویس db، n8n و mailpit باید Up با�
 ```bash
 python manage.py migrate
 python manage.py seed_demo            # کاربران و سه پرونده‌ی نمونه
-python manage.py seed_demo --full     # (اختیاری) به‌علاوه‌ی نُه دانشجو با پرونده در وضعیت‌های میانی
+python manage.py seed_demo --full     # (اختیاری) به‌علاوه‌ی ده دانشجو با پرونده در وضعیت‌های میانی
 python manage.py createsuperuser      # حساب ادمین خودتان
 ```
 
@@ -135,7 +135,7 @@ python manage.py createsuperuser      # حساب ادمین خودتان
 | `baharan.sheikholeslami` | بهاران شیخ‌الاسلامی | دانشجو، پرونده «تدوین پیشنهاد» |
 | `amir.hosseini` | امیر حسینی | دانشجو، روز دفاعش امروز است؛ برای ثبت نمره |
 | `kamran.shirazi` | کامران شیرازی | نویسنده غیردانشجو |
-| `mahsa.rahimi`، `reza.sadeghi`، `niloofar.kazemi`، `pouria.abbasi`، `elaheh.jafari`، `mohammad.taheri`، `fatemeh.mousavi`، `alireza.niknam`، `zahra.babaei` | | دانشجو؛ فقط با `--full`، هر کدام در یک وضعیت میانی |
+| `mahsa.rahimi`، `reza.sadeghi`، `niloofar.kazemi`، `pouria.abbasi`، `elaheh.jafari`، `mohammad.taheri`، `fatemeh.mousavi`، `alireza.niknam`، `zahra.babaei`، `kian.rostami` | | دانشجو؛ فقط با `--full`، هر کدام در یک وضعیت میانی |
 | `soleiman.fallah`، `leila.sharifi`، `omid.bagheri`، `kaveh.mirzaei` | دکتر فلاح، شریفی، باقری، میرزایی | استاد راهنما (هر استاد حداکثر دو دانشجو) |
 | `mehdi.zakeri`، `narges.rezaei`، `parisa.karimi`، `hossein.mousavi` | دکتر ذاکری، رضایی، کریمی، موسوی | داور |
 | `ali.ahmadi` | دکتر علی احمدی | مدیر گروه |

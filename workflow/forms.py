@@ -11,6 +11,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.db.models import Case, IntegerField, When
+from django.utils import timezone
 
 from agents import services as agents
 
@@ -207,14 +208,60 @@ class ReviewForm(ActionForm):
         self.fields["note"].label = "نظر مکتوب (برای «بازگشت جهت اصلاح» الزامی است)"
 
 
-class ScheduleDefenseForm(ActionForm):
-    defense_date = JalaliDateField(label="تاریخ دفاع (شمسی)")
-    defense_place = forms.CharField(label="محل دفاع", max_length=200)
+class RequestDefenseForm(ActionForm):
+    """دانشجو چند روز و محل دفاع را پیشنهاد می‌دهد؛ استادان از میان ساعت‌های همین روزها انتخاب می‌کنند."""
+    place = forms.CharField(label="محل برگزاری دفاع", max_length=200,
+                            widget=forms.TextInput(attrs={"placeholder": "مثلاً کلاس ۲۰۱ دانشکده"}))
 
     def setup(self):
-        earliest = rules.add_months(self.case.final_approved_at,
-                                    rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)
-        self.fields["defense_date"].help_text = f"زودترین تاریخ مجاز: {to_jalali(earliest)}"
+        today = timezone.localdate()
+        earliest = rules.earliest_defense_day(self.case.final_approved_at, today)
+        for i in range(1, rules.DEFENSE_MAX_DAYS + 1):
+            required = i <= rules.DEFENSE_MIN_DAYS
+            self.fields[f"day_{i}"] = JalaliDateField(
+                label=f"روز پیشنهادی {fa_digits(i)}" + ("" if required else " (اختیاری)"), required=required)
+        self.fields["day_1"].help_text = (
+            f"زودترین تاریخ مجاز: {to_jalali(earliest)} (حداقل {fa_digits(rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)} "
+            "ماه پس از تصویب نهایی). جمعه‌ها پذیرفته نمی‌شود.")
+        self.fields["place"].help_text = "این محل همراه با روز و ساعت دفاع به کارشناس آموزش اطلاع داده می‌شود."
+        hours = "، ".join(services.hour_label(t) for t in rules.DEFENSE_TIME_SLOTS)
+        self.fields["note"].help_text = (f"استاد راهنما و داور(ان) برای هر روز از میان {hours} زمان‌های آزاد "
+                                         "خود را انتخاب می‌کنند و سامانه نخستین زمان مشترک را روز دفاع اعلام می‌کند.")
+        self.order_fields([f"day_{i}" for i in range(1, rules.DEFENSE_MAX_DAYS + 1)] + ["place", "note"])
+
+    def clean(self):
+        data = super().clean()
+        days = [data.get(f"day_{i}") for i in range(1, rules.DEFENSE_MAX_DAYS + 1)]
+        days = [d for d in days if d]
+        if len(set(days)) != len(days):
+            raise ValidationError("هر روز را فقط یک بار وارد کنید.")
+        return data
+
+    def payload(self):
+        days = [self.cleaned_data.get(f"day_{i}") for i in range(1, rules.DEFENSE_MAX_DAYS + 1)]
+        return {"days": [d for d in days if d], "place": self.cleaned_data["place"]}
+
+
+class PickDefenseTimeForm(ActionForm):
+    """استاد راهنما یا داور زمان‌های آزاد خود را از میان روزهای پیشنهادی دانشجو انتخاب می‌کند."""
+    slots = forms.MultipleChoiceField(label="روز و ساعت‌های آزاد شما", widget=forms.CheckboxSelectMultiple)
+
+    def setup(self):
+        request = services.open_defense_request(self.case)
+        keys = request.slot_keys() if request else []
+        groups = {}
+        for key in keys:
+            day = key.split("T")[0]
+            groups.setdefault(day, []).append((key, services.hour_label(key.split("T")[1]).removeprefix("ساعت ")))
+        self.fields["slots"].choices = [
+            (services.day_label(date.fromisoformat(day)), items) for day, items in groups.items()]
+        place = f" محل پیشنهادی دانشجو: {request.place}." if request else ""
+        self.fields["slots"].help_text = (
+            "ساعت‌ها، ساعت شروع جلسه‌اند. هر زمانی را که می‌توانید در جلسه‌ی دفاع باشید علامت بزنید (حداقل یکی). سامانه پس از انتخاب "
+            "همه‌ی استادان، نخستین زمانی را که برای همه آزاد است روز دفاع اعلام می‌کند." + place)
+
+    def payload(self):
+        return {"slots": self.cleaned_data["slots"]}
 
 
 class RecordResultForm(ActionForm):
@@ -230,7 +277,9 @@ ACTION_FORMS = {
     "select_advisor": SelectAdvisorForm,
     "assign_referees": AssignRefereesForm,
     "submit_review": ReviewForm,
-    "schedule_defense": ScheduleDefenseForm,
+    "request_defense": RequestDefenseForm,
+    "advisor_pick_defense_time": PickDefenseTimeForm,
+    "referee_pick_defense_time": PickDefenseTimeForm,
     "record_result": RecordResultForm,
 }
 

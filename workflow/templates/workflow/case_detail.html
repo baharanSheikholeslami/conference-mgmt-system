@@ -73,10 +73,41 @@
     {% if case.edu_received_at %}<div><dt>دریافت در آموزش</dt><dd>{{ case.edu_received_at|jalali }}</dd></div>{% endif %}
     {% if case.final_approved_at %}<div><dt>تصویب نهایی</dt><dd>{{ case.final_approved_at|jalali }}</dd></div>{% endif %}
     {% if case.thesis_submitted_at %}<div><dt>تحویل پایان‌نامه</dt><dd>{{ case.thesis_submitted_at|jalali }}</dd></div>{% endif %}
-    {% if case.defense_date %}<div><dt>دفاع</dt><dd>{{ case.defense_date|jalali }} — {{ case.defense_place }}</dd></div>{% endif %}
+    {% if case.defense_date %}<div><dt>دفاع</dt><dd>{{ case.defense_date|jalali }}{% if defense_time %} — {{ defense_time }}{% endif %} — {{ case.defense_place }}</dd></div>{% endif %}
     {% if case.grade is not None %}<div><dt>نمره</dt><dd>{{ case.grade|fa }}</dd></div>{% endif %}
   </dl>
 </section>
+
+{% if defense %}
+<section class="section" aria-labelledby="defense-title">
+  <h2 id="defense-title" class="section-title">زمان‌بندی دفاع</h2>
+  <div class="card defense-card">
+    {% if defense.chosen %}
+      <p class="defense-result"><span class="badge done">روز دفاع تعیین شد</span> <strong>{{ defense.chosen }}</strong> — {{ defense.place }}</p>
+      <p class="muted">سامانه نخستین زمانی را که برای همه‌ی استادان آزاد بود انتخاب کرد و به کارشناس آموزش اطلاع داد.</p>
+    {% elif defense.no_match %}
+      <p class="defense-result"><span class="badge stopped">زمان مشترکی پیدا نشد</span> میان زمان‌های انتخابی استادان زمان مشترکی نبود؛ دانشجو روزهای دیگری پیشنهاد می‌دهد.</p>
+    {% else %}
+      <p class="defense-result"><span class="badge plain">در انتظار انتخاب زمان استادان</span> هر استاد از میان روزهای زیر، روز و ساعت‌های آزاد خود را انتخاب می‌کند.</p>
+    {% endif %}
+    <dl class="facts">
+      <div class="wide"><dt>روزهای پیشنهادی دانشجو</dt><dd>{{ defense.days|join:"، " }}</dd></div>
+      <div class="wide"><dt>ساعت‌های هر روز</dt><dd>{{ defense.times|join:"، " }}</dd></div>
+      <div><dt>محل</dt><dd>{{ defense.place }}</dd></div>
+    </dl>
+    <ul class="defense-people">
+      {% for p in defense.people %}
+      <li>
+        <strong>{{ p.who }}</strong> <small class="muted">({{ p.role }})</small>
+        {% if p.answered %}<span class="pill ok">زمان‌هایش را انتخاب کرد</span>
+          {% if not defense.open %}<br><small class="muted">{{ p.slots|join:"، " }}</small>{% endif %}
+        {% else %}<span class="pill">هنوز انتخاب نکرده</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
 
 <section class="section" aria-labelledby="docs-title">
   <h2 id="docs-title" class="section-title">اسناد</h2>
@@ -103,6 +134,7 @@
           {% if box.signed %}<a class="signed" href="{% url 'signed_download' box.signed.pk %}"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3.5v9M6.5 9 10 12.5 13.5 9M4 15.5h12"/></svg>دانلود نسخه‌ی امضاشده</a>{% endif %}
         </div>
         {% if box.latest.note %}<p class="doc-note">{{ box.latest.note }}</p>{% endif %}
+        {% if box.view_only %}<p class="doc-note">پایان‌نامه پس از تأیید استاد راهنما برای مشاهده‌ی شما فرستاده شده است؛ تأیید داور لازم نیست.</p>{% endif %}
         {% validation_box box.latest case %}
         {% if box.decision %}
           <div class="actions">

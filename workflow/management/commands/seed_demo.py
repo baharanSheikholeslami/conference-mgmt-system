@@ -12,7 +12,7 @@ from django.utils import timezone
 from workflow import rules
 from workflow.enums import (CaseRole, DeadlineKind, DocKind, ReviewDecision, Semester, State,
                             TitleSource, UserType)
-from workflow.models import (CaseEvent, Department, DocumentVersion, ProjectCase,
+from workflow.models import (CaseEvent, DefenseRequest, Department, DocumentVersion, ProjectCase,
                              RefereeAssignment, Review, Signature, User)
 from workflow.signing import sign_version
 
@@ -56,14 +56,15 @@ LEGACY_USERNAMES = {
     "student10": "fatemeh.mousavi", "student11": "alireza.niknam", "student12": "zahra.babaei",
 }
 
-# استاد راهنمای هر دانشجو (هر استاد حداکثر دو دانشجو: rules.MAX_ADVISEES)؛ لیلا شریفی، امید باقری و
-# نرگس رضایی هنوز ظرفیت خالی دارند تا دانشجوی بدون پرونده (سارا نوری) بتواند از میان آن‌ها انتخاب کند
+# استاد راهنمای هر دانشجو (هر استاد حداکثر دو دانشجو: rules.MAX_ADVISEES)؛ لیلا شریفی و نرگس رضایی
+# (و امید باقری بدون --full) هنوز ظرفیت خالی دارند تا دانشجوی بدون پرونده (سارا نوری) بتواند از میان آن‌ها انتخاب کند
 # و سلیمان فلاح (۲ از ۲) نمونه‌ی «ظرفیت پُر» باشد.
 ADVISORS = {
     "student1": "advisor3", "external1": "advisor4", "student3": "advisor1",
     "mahsa.rahimi": "advisor1", "reza.sadeghi": "advisor4", "niloofar.kazemi": "referee3",
     "pouria.abbasi": "referee3", "elaheh.jafari": "advisor2", "mohammad.taheri": "referee4",
     "fatemeh.mousavi": "referee4", "alireza.niknam": "advisor2", "zahra.babaei": "referee2",
+    "kian.rostami": "advisor3",
 }
 
 # عنوان پروژه‌ی پرونده‌های پایه (کلید داخلی دانشجو ← (عنوان فارسی، عنوان انگلیسی)).
@@ -92,6 +93,7 @@ INTERESTS = {
     "fatemeh.mousavi": ("مدل‌های زبانی بزرگ", "چت‌بات‌ها و بازیابی-افزوده تولید برای پاسخ به پرسش دانشجویان."),
     "alireza.niknam": ("امنیت نرم‌افزار", "تحلیل کد و یافتن آسیب‌پذیری برنامه‌های وب."),
     "zahra.babaei": ("برنامه‌نویسی موبایل", "برنامه‌های موبایل و رایانش ابری."),
+    "kian.rostami": ("اینترنت اشیا", "حسگرهای هوشمند و پایش محیط با اینترنت اشیا."),
 }
 
 # دانشجویانی که فقط با --full ساخته می‌شوند؛ هر کدام یک پرونده در یکی از وضعیت‌های میانی
@@ -117,6 +119,9 @@ FULL_STUDENTS = [
      "A Static Analysis Tool for Finding Vulnerabilities in Web Applications"),
     ("zahra.babaei", "زهرا", "بابایی", "40031100", State.THESIS_SUBMITTED,
      "برنامه‌ی موبایل رزرو نوبت درمانگاه", "A Mobile App for Clinic Appointment Booking"),
+    # درخواست دفاع داده و منتظر است استاد راهنما (باقری) و داور (ذاکری) روز و ساعت آزادشان را انتخاب کنند
+    ("kian.rostami", "کیان", "رستمی", "40031101", State.DEFENSE_REQUESTED,
+     "سامانه پایش کیفیت هوای کلاس‌ها با اینترنت اشیا", "An IoT System for Classroom Air Quality Monitoring"),
 ]
 
 
@@ -194,7 +199,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--full", action="store_true",
-                            help="برای هر وضعیت میانی گردش‌کار یک دانشجو و پرونده‌ی آماده بسازد (نُه دانشجوی دیگر با پرونده در وضعیت‌های میانی)")
+                            help="برای هر وضعیت میانی گردش‌کار یک دانشجو و پرونده‌ی آماده بسازد (ده دانشجوی دیگر با پرونده در وضعیت‌های میانی)")
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -341,6 +346,19 @@ class Command(BaseCommand):
             self.seed_case(author, users, dept, today, state, year, semester, title_fa, title_en)
 
     @staticmethod
+    def seed_defense_request(case, author, today):
+        """سه روز پیشنهادی (غیرجمعه) از هفته‌ی بعد، تا استادان زمان‌های آزادشان را انتخاب کنند."""
+        day, days = rules.earliest_defense_day(case.final_approved_at, today) + timedelta(days=6), []
+        while len(days) < 3:
+            if day.weekday() not in rules.NO_DEFENSE_WEEKDAYS:
+                days.append(day.isoformat())
+            day += timedelta(days=1)
+        DefenseRequest.objects.create(case=case, requested_by=author, days=days, place="کلاس ۲۰۱ دانشکده")
+        CaseEvent.objects.create(case=case, actor=author, action="request_defense",
+                                 from_state=State.THESIS_SUBMITTED, to_state=State.DEFENSE_REQUESTED,
+                                 data={"days": days, "defense_place": "کلاس ۲۰۱ دانشکده"})
+
+    @staticmethod
     def log_return(case, users):
         """پرونده‌ی «نیازمند اصلاح» رویداد بازگشت دارد تا دانشجو کادر نظر داور را ببیند (مثل مسیر واقعی)."""
         if case.state == State.REVISION and not case.events.exists():
@@ -363,7 +381,8 @@ class Command(BaseCommand):
         if reached(State.REFEREE_ASSIGNMENT):
             case.edu_received_at = today - timedelta(days=10)
         if reached(State.IN_PROGRESS):
-            case.final_approved_at = today - timedelta(days=3)
+            # پرونده‌ای که درخواست دفاع داده، سه ماهِ پس از تصویب را گذرانده است
+            case.final_approved_at = today - timedelta(days=100 if reached(State.DEFENSE_REQUESTED) else 3)
         if reached(State.THESIS_SUBMITTED):
             case.thesis_submitted_at = today - timedelta(days=1)
         case.save()
@@ -381,6 +400,8 @@ class Command(BaseCommand):
             DocumentVersion.objects.create(case=case, kind=DocKind.THESIS, number=1,
                                            file=sample_doc("thesis"), note="فایل نمونه",
                                            uploaded_by=author)
+        if state == State.DEFENSE_REQUESTED:
+            self.seed_defense_request(case, author, today)
         self.log_return(case, users)
         case.sync_deadlines()
         done = {DeadlineKind.PROPOSAL_SUBMISSION: case.edu_received_at,

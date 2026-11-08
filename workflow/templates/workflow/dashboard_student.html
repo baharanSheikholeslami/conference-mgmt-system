@@ -30,11 +30,19 @@
     </a>
   {% endfor %}
   {% if defense %}
+    {% if defense.requested %}
+    <a class="timer-card calm" href="{% url 'case_detail' case.pk %}">
+      <small>درخواست دفاع</small>
+      <strong>در انتظار انتخاب زمان استادان</strong>
+      <span>پس از انتخاب استاد راهنما و داور، سامانه روز و ساعت دفاع را اعلام می‌کند</span>
+    </a>
+    {% else %}
     <a class="timer-card {% if defense.scheduled %}{{ defense.date|time_left_class }}{% else %}calm{% endif %}" href="{% url 'case_detail' case.pk %}">
       <small>{% if defense.scheduled %}جلسه‌ی دفاع{% else %}زودترین تاریخ مجاز دفاع{% endif %}</small>
       <strong>{% if defense.scheduled %}{{ defense.date|time_left }}{% else %}{{ defense.date|jalali }}{% endif %}</strong>
-      <span>{% if defense.scheduled %}{{ defense.date|jalali }} — {{ defense.place }}{% else %}زمان دفاع را آموزش دانشکده تعیین می‌کند{% endif %}</span>
+      <span>{% if defense.scheduled %}{{ defense.date|jalali }}{% if defense.time %} — {{ defense.time }}{% endif %} — {{ defense.place }}{% else %}پس از تأیید پایان‌نامه، چند روز برای دفاع پیشنهاد می‌دهید و استادان زمان را انتخاب می‌کنند{% endif %}</span>
     </a>
+    {% endif %}
   {% endif %}
   </div>
 </section>

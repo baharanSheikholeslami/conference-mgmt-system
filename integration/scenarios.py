@@ -52,12 +52,46 @@ def defense_day(case):
     return case.defense_date
 
 
-def earliest_defense(extra_days=0):
+def defense_days(count=3, offset=0):
+    """
+    count روزِ غیرجمعه برای درخواست دفاع، از «زودترین تاریخ مجاز دفاع + offset» به بعد.
+    offset منفی روز اول را زودتر از حد مجاز می‌کند (برای آزمودن پیش‌شرط).
+    """
     def at(case):
         from datetime import timedelta
-        return (rules.add_months(case.final_approved_at, rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)
-                + timedelta(days=extra_days))
+        day = (rules.add_months(case.final_approved_at, rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)
+               + timedelta(days=offset))
+        days = []
+        while len(days) < count:
+            if day.weekday() not in rules.NO_DEFENSE_WEEKDAYS:
+                days.append(day)
+            day += timedelta(days=1)
+        return days
     return at
+
+
+def defense_slots(*indexes):
+    """زمان‌های شماره‌ی indexes از میان زمان‌های درخواست دفاعِ باز (روز اول ساعت اول = ۰)."""
+    def at(case):
+        from workflow import services
+        request = services.open_defense_request(case)
+        keys = request.slot_keys() if request else []
+        return [keys[i] for i in indexes if i < len(keys)]
+    return at
+
+
+def defense_at(slot_index):
+    """بررسی: روز و ساعت دفاع همان زمانِ شماره‌ی slot_index درخواستِ آخر است."""
+    def check(case):
+        from workflow import services
+        request = services.latest_defense_request(case)
+        expected = request.slot_keys()[slot_index] if request else ""
+        got = (f"{case.defense_date.isoformat()}T{case.defense_time.strftime('%H:%M')}"
+               if case.defense_date and case.defense_time else "")
+        if got != expected or case.defense_place != request.place:
+            return f"دفاع {got} در {case.defense_place} (انتظار {expected} در {request.place})"
+        return ""
+    return check
 
 
 def deadline_day(kind, offset=0):
@@ -147,8 +181,14 @@ SCENARIOS = [
             S(100, "@author", "upload_thesis"),
             S(100, "@author", "submit_thesis", expect=State.THESIS_ADVISOR_REVIEW),
             S(103, "@advisor", "thesis_approve", expect=State.THESIS_SUBMITTED, check=last_event_late(False)),
-            S(105, "@edu", "schedule_defense",
-              {"defense_date": earliest_defense(7), "defense_place": "تالار دانشکده"}, State.DEFENSE_SCHEDULED),
+            S(104, "@ref_ai", "referee_pick_defense_time", {"slots": defense_slots(0)}, NOT_ALLOWED,
+              note="پیش از درخواست دفاع دانشجو"),
+            S(105, "@author", "request_defense",
+              {"days": defense_days(3, 7), "place": "تالار دانشکده"}, State.DEFENSE_REQUESTED),
+            S(106, "@advisor", "advisor_pick_defense_time", {"slots": defense_slots(1, 2, 5)},
+              State.DEFENSE_REQUESTED, note="تا انتخاب داور، وضعیت تغییر نمی‌کند"),
+            S(107, "@ref_ai", "referee_pick_defense_time", {"slots": defense_slots(2, 6)},
+              State.DEFENSE_SCHEDULED, check=defense_at(2), note="نخستین زمان مشترک: روز اول، ساعت سوم"),
             S(defense_day, "@advisor", "record_result", {"grade": 18.5}, State.COMPLETED,
               check=lambda c: graded(18.5)(c) or all_deadlines_met(c)),
         )),
@@ -197,8 +237,15 @@ SCENARIOS = [
             S(90, "@author", "upload_thesis"),
             S(90, "@author", "submit_thesis", expect=State.THESIS_ADVISOR_REVIEW),
             S(92, "@advisor", "thesis_approve", expect=State.THESIS_SUBMITTED),
-            S(93, "@edu", "schedule_defense",
-              {"defense_date": earliest_defense(3), "defense_place": "کلاس ۲۰۱"}, State.DEFENSE_SCHEDULED),
+            S(93, "@author", "request_defense",
+              {"days": defense_days(2, 3), "place": "کلاس ۲۰۱"}, State.DEFENSE_REQUESTED),
+            S(94, "@advisor", "advisor_pick_defense_time", {"slots": defense_slots(5, 6)}, State.DEFENSE_REQUESTED),
+            S(94, "@ref_ai", "referee_pick_defense_time", {"slots": defense_slots(6, 7)}, State.DEFENSE_REQUESTED,
+              note="داور دوم هنوز انتخاب نکرده"),
+            S(94, "@ref_ai", "referee_pick_defense_time", {"slots": defense_slots(6)}, GUARD,
+              note="هر استاد فقط یک بار انتخاب می‌کند"),
+            S(95, "@ref_db", "referee_pick_defense_time", {"slots": defense_slots(4, 6, 7)}, State.DEFENSE_SCHEDULED,
+              check=defense_at(6)),
             S(defense_day, "@advisor", "record_result", {"grade": 17}, GUARD, note="نمره ثبت نمی‌شود"),
             S(defense_day, "@advisor", "record_result", expect=State.COMPLETED, check=not_graded),
         )),
@@ -280,10 +327,23 @@ SCENARIOS = [
             S(80, "@author", "upload_thesis"),
             S(80, "@author", "submit_thesis", expect=State.THESIS_ADVISOR_REVIEW),
             S(81, "@advisor", "thesis_approve", expect=State.THESIS_SUBMITTED),
-            S(82, "@edu", "schedule_defense", {"defense_date": earliest_defense(-1), "defense_place": "کلاس ۱"},
+            S(82, "@edu", "request_defense", {"days": defense_days(2), "place": "کلاس ۱"}, NOT_ALLOWED,
+              note="درخواست دفاع با دانشجوست"),
+            S(82, "@author", "request_defense", {"days": defense_days(2, -3), "place": "کلاس ۱"},
               GUARD, note="کمتر از سه ماه پس از تصویب"),
-            S(82, "@edu", "schedule_defense", {"defense_date": earliest_defense(0), "defense_place": "کلاس ۱"},
-              State.DEFENSE_SCHEDULED),
+            S(82, "@author", "request_defense", {"days": defense_days(1), "place": "کلاس ۱"},
+              GUARD, note="حداقل دو روز"),
+            S(82, "@author", "request_defense", {"days": defense_days(2), "place": "کلاس ۱"},
+              State.DEFENSE_REQUESTED),
+            S(83, "@advisor", "advisor_pick_defense_time", {"slots": []}, GUARD, note="بدون هیچ زمانی"),
+            S(83, "@advisor", "advisor_pick_defense_time", {"slots": defense_slots(0)}, State.DEFENSE_REQUESTED),
+            S(84, "@ref_db", "referee_pick_defense_time", {"slots": defense_slots(5)}, State.THESIS_SUBMITTED,
+              note="زمان مشترکی نیست؛ دانشجو روزهای دیگری پیشنهاد می‌دهد"),
+            S(85, "@author", "request_defense", {"days": defense_days(2, 7), "place": "کلاس ۱"},
+              State.DEFENSE_REQUESTED),
+            S(86, "@ref_db", "referee_pick_defense_time", {"slots": defense_slots(1, 3)}, State.DEFENSE_REQUESTED),
+            S(86, "@advisor", "advisor_pick_defense_time", {"slots": defense_slots(0, 3)}, State.DEFENSE_SCHEDULED,
+              check=defense_at(3)),
             S(83, "@advisor", "record_result", {"grade": 19}, GUARD, note="پیش از روز دفاع"),
             S(defense_day, "@advisor", "record_result", {"grade": 25}, GUARD, note="نمره‌ی بیش از ۲۰"),
             S(defense_day, "@author", "record_result", {"grade": 20}, NOT_ALLOWED, note="دانشجو نمره نمی‌دهد"),

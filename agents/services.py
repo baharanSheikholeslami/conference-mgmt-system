@@ -598,22 +598,65 @@ def _deadline_facts(deadline, today):
             "days_left": days_left, "status": days_phrase(days_left)}
 
 
+def _edu_and_referees(case):
+    referees = [a.referee for a in case.referee_assignments.select_related("referee")]
+    return referees + list(User.objects.filter(user_type=UserType.EDU_STAFF, is_active=True))
+
+
+def _informed(event):
+    """
+    کسانی که بدون داشتن اقدامی باید «در جریان» قرار گیرند:
+      • تأیید پایان‌نامه: کارشناس آموزش و داور(ان)، برای مشاهده‌ی پایان‌نامه (تأیید داور لازم نیست)
+      • تعیین روز دفاع: کارشناس آموزش، استاد راهنما و داور(ان)، با تاریخ، ساعت و محل دفاع
+    """
+    case = event.case
+    if event.action == "thesis_approve":
+        return _edu_and_referees(case), ["پایان‌نامه با تأیید استاد راهنما برای مشاهده به کارشناس آموزش "
+                                        "و داور(ان) فرستاده شد؛ تأیید داور لازم نیست."]
+    if event.to_state == State.DEFENSE_SCHEDULED and case.defense_date:
+        return [case.advisor, *_edu_and_referees(case)], [_defense_sentence(case)]
+    return [], []
+
+
+def _defense_facts(case):
+    if not case.defense_date:
+        return None
+    hhmm = case.defense_time.strftime("%H:%M") if case.defense_time else ""
+    return {"date": to_jalali(case.defense_date), "weekday": rules.weekday_fa(case.defense_date),
+            "time": fa_digits(hhmm), "place": case.defense_place}
+
+
+def _defense_sentence(case):
+    d = _defense_facts(case)
+    when = f"{d['weekday']} {d['date']}" + (f" ساعت {d['time']}" if d["time"] else "")
+    return f"جلسه‌ی دفاع {when} در «{d['place']}» برگزار می‌شود."
+
+
 def build_event_notifications(event):
     """
-    گیرندگان یک تغییر وضعیت: هر که اکنون نوبت اقدام اوست + نویسنده (+ استاد راهنما در پایان پرونده)،
-    به‌جز خود انجام‌دهنده‌ی اقدام و کسانی که ایمیل ندارند.
+    گیرندگان یک تغییر وضعیت: هر که اکنون نوبت اقدام اوست + نویسنده (+ استاد راهنما در پایان پرونده)
+    + کسانی که باید در جریان باشند (_informed)، به‌جز خود انجام‌دهنده‌ی اقدام و کسانی که ایمیل ندارند.
     """
     case, today = event.case, timezone.localdate()
-    people = [u for u in stakeholders(case) if pending_actions(case, u)] + [case.author]
+    informed, extra = _informed(event)
+    people = [u for u in stakeholders(case) if pending_actions(case, u)] + [case.author] + informed
     if case.is_terminal:
         people.append(case.advisor)
     actor = str(event.actor) if event.actor else "سامانه"
     happened = f"«{wf.action_label(event.action)}» توسط {actor} انجام شد."
+    if event.to_state == State.DEFENSE_SCHEDULED and event.from_state == State.DEFENSE_REQUESTED:
+        happened = ("همه‌ی استادان زمان‌های آزاد خود را انتخاب کردند و سامانه نخستین زمان مشترک را "
+                    "روز دفاع تعیین کرد.")
+    elif event.to_state == State.THESIS_SUBMITTED and event.from_state == State.DEFENSE_REQUESTED:
+        happened = ("میان زمان‌های انتخابی استادان زمان مشترکی پیدا نشد؛ دانشجو باید روزهای دیگری "
+                    "برای دفاع پیشنهاد دهد.")
     deadline = wf.next_deadline(case)
     facts = {"what_happened": happened,
              "next_deadline": _deadline_facts(deadline, today) if deadline else None}
+    if event.to_state == State.DEFENSE_SCHEDULED:
+        facts["defense"] = _defense_facts(case)
     subject = f"[سامانه پروژه] {case.get_state_display()} — {case.display_title}"
-    sentences = [f"در پرونده‌ی «{case.display_title}»، {happened}"]
+    sentences = [f"در پرونده‌ی «{case.display_title}»، {happened}", *extra]
     if deadline:
         sentences.append(f"نزدیک‌ترین مهلت: {deadline.get_kind_display()} — "
                          f"{to_jalali(deadline.due_date)} ({days_phrase(facts['next_deadline']['days_left'])}).")

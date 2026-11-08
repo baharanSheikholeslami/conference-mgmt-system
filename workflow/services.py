@@ -12,6 +12,7 @@ statemachine.py می‌گوید «چه گذارهایی وجود دارد»؛ ا
 عامل‌های n8n (فاز ۳) فقط به CaseEventها گوش می‌دهند و هیچ‌وقت perform() را صدا نمی‌زنند.
 """
 from dataclasses import dataclass, field
+from datetime import date, time, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
@@ -23,8 +24,8 @@ from . import rules
 from . import statemachine as sm
 from .enums import CaseRole, DeadlineKind, DocKind, ReviewDecision, State, TitleSource, UserType
 from .jalali import fa_digits, to_jalali
-from .models import (CaseEvent, Deadline, DocumentComment, DocumentVersion, ProjectCase,
-                     RefereeAssignment, Review, Signature, User)
+from .models import (CaseEvent, Deadline, DefenseAvailability, DefenseRequest, DocumentComment,
+                     DocumentVersion, ProjectCase, RefereeAssignment, Review, Signature, User)
 
 
 # ───────────────────────── خطاها ─────────────────────────
@@ -98,6 +99,72 @@ def has_reviewed(case, user, version):
                                  version=version).exists()
 
 
+# ───────────────────────── زمان‌بندی دفاع ─────────────────────────
+
+PICK_TIME_ACTIONS = {"advisor_pick_defense_time": CaseRole.ADVISOR,
+                     "referee_pick_defense_time": CaseRole.REFEREE}
+
+
+def open_defense_request(case):
+    return case.defense_requests.filter(status=DefenseRequest.Status.OPEN).first()
+
+
+def latest_defense_request(case):
+    return case.defense_requests.order_by("-created_at", "-id").first()
+
+
+def defense_professors(case):
+    """کسانی که باید زمان دفاع را انتخاب کنند: استاد راهنما و همه‌ی داوران پرونده."""
+    people = [(case.advisor, CaseRole.ADVISOR)] if case.advisor_id else []
+    people += [(a.referee, CaseRole.REFEREE)
+               for a in case.referee_assignments.select_related("referee").order_by("assigned_at", "id")]
+    return people
+
+
+def has_picked_defense_time(case, user):
+    request = open_defense_request(case)
+    return request is not None and request.availabilities.filter(professor=user).exists()
+
+
+def hour_label(hhmm):
+    """«ساعت ۹:۰۰» برای 09:00."""
+    return f"ساعت {fa_digits(hhmm[1:] if hhmm.startswith('0') else hhmm)}"
+
+
+def slot_label(key):
+    """«سه‌شنبه ۱۴۰۵/۱۰/۱۵ — ساعت ۹:۰۰» برای کلیدی مثل 2027-01-05T09:00."""
+    day, hhmm = key.split("T")
+    return f"{day_label(date.fromisoformat(day))} — {hour_label(hhmm)}"
+
+
+def day_label(day):
+    return f"{rules.weekday_fa(day)} {to_jalali(day)}"
+
+
+def defense_schedule(case):
+    """
+    کادر «زمان‌بندی دفاع» صفحه‌ی پرونده: آخرین درخواست دفاع، روزهای پیشنهادی، این‌که هر استاد
+    زمان‌هایش را انتخاب کرده یا نه، و نتیجه (روز و ساعت مشترک، یا «زمان مشترکی نبود»). یا None.
+    """
+    request = latest_defense_request(case)
+    if request is None:
+        return None
+    picked = {a.professor_id: a for a in request.availabilities.all()}
+    people = []
+    for user, role in defense_professors(case):
+        a = picked.get(user.pk)
+        people.append({"who": user, "role": CaseRole(role).label, "answered": a is not None,
+                       "slots": [slot_label(k) for k in sorted(a.slots)] if a else []})
+    return {
+        "request": request, "place": request.place,
+        "days": [day_label(d) for d in request.day_list()],
+        "times": [hour_label(t) for t in rules.DEFENSE_TIME_SLOTS],
+        "people": people, "open": request.status == DefenseRequest.Status.OPEN,
+        "no_match": request.status == DefenseRequest.Status.NO_MATCH,
+        "chosen": slot_label(request.chosen_slot) if request.chosen_slot else "",
+    }
+
+
 def next_deadline(case):
     """نزدیک‌ترین مهلتِ هنوز انجام‌نشده (برای نمایش در داشبورد). از کش prefetch استفاده می‌کند."""
     if case.is_terminal:
@@ -154,6 +221,11 @@ def blocker(case, action, user):
             return "هنوز نسخه‌ای از پیشنهاد برای داوری بارگذاری نشده است."
         if has_reviewed(case, user, version):
             return "شما برای این نسخه قبلاً رأی داده‌اید."
+    elif action in PICK_TIME_ACTIONS:
+        if open_defense_request(case) is None:
+            return "درخواست دفاع بازی برای این پرونده نیست."
+        if has_picked_defense_time(case, user):
+            return "شما زمان‌های خود را ثبت کرده‌اید؛ سامانه پس از انتخاب بقیه‌ی استادان روز دفاع را اعلام می‌کند."
     elif action == "record_result":
         if defense_is_ahead(case):
             return f"ثبت نتیجه پیش از روز دفاع ({to_jalali(case.defense_date)}) ممکن نیست."
@@ -168,8 +240,8 @@ def available_actions(case, user):
         if t.actor not in roles:
             continue
         reason = blocker(case, t.action, user)
-        if t.action == "submit_review" and reason:
-            continue          # داوری که رأی داده دیگر کاری در این پرونده ندارد
+        if t.action in ("submit_review", *PICK_TIME_ACTIONS) and reason:
+            continue          # داوری که رأی داده (یا استادی که زمانش را انتخاب کرده) دیگر کاری ندارد
         waiting = t.action == "record_result" and defense_is_ahead(case)
         offers.append(Offer(t, reason, waiting))
     return offers
@@ -188,8 +260,11 @@ _RETURN_TITLES = {
     "thesis_return": "استاد راهنما پایان‌نامه را برای اصلاح برگرداند",
     "advisor_decline": "استاد راهنما درخواست راهنمایی شما را نپذیرفت؛ استاد دیگری انتخاب کنید",
     "submit_review": "داوران پیشنهاد را برای اصلاح برگرداندند",
+    "advisor_pick_defense_time": "میان زمان‌های انتخابی استادان زمان مشترکی پیدا نشد؛ روزهای دیگری برای دفاع پیشنهاد دهید",
+    "referee_pick_defense_time": "میان زمان‌های انتخابی استادان زمان مشترکی پیدا نشد؛ روزهای دیگری برای دفاع پیشنهاد دهید",
 }
-_STUDENT_STATES = (State.ADVISOR_SELECTION, State.DRAFTING, State.REVISION, State.IN_PROGRESS)
+_STUDENT_STATES = (State.ADVISOR_SELECTION, State.DRAFTING, State.REVISION, State.IN_PROGRESS,
+                   State.THESIS_SUBMITTED)
 
 
 def pending_feedback(case):
@@ -207,6 +282,11 @@ def pending_feedback(case):
         reviews = Review.objects.filter(version=version, decision=ReviewDecision.REVISE)
         items = [{"who": str(r.assignment.referee), "note": r.comment}
                  for r in reviews.select_related("assignment__referee")]
+    elif last.action in PICK_TIME_ACTIONS:
+        request = latest_defense_request(case)
+        items = [{"who": str(a.professor),
+                  "note": "زمان‌های آزاد: " + "، ".join(slot_label(k) for k in sorted(a.slots))}
+                 for a in request.availabilities.select_related("professor")] if request else []
     else:
         items = [{"who": str(last.actor or "سامانه"), "note": last.note}]
     return {"title": _RETURN_TITLES[last.action], "items": items, "at": last.created_at}
@@ -217,11 +297,22 @@ def sees_all_versions(case, user):
     return user.is_superuser or bool(case.roles_of(user) & {CaseRole.AUTHOR, CaseRole.ADVISOR, CaseRole.EDU})
 
 
+def _shared_kinds(case, user):
+    """
+    انواع سندی که داور (یا مدیر گروه) می‌بیند: پیشنهاد همیشه؛ پایان‌نامه فقط پس از تأیید استاد راهنما،
+    که برای مشاهده‌ی آموزش و داور(ان) فرستاده می‌شود (داور پایان‌نامه را تأیید نمی‌کند).
+    """
+    kinds = [DocKind.PROPOSAL]
+    if case.thesis_submitted_at is not None:
+        kinds.append(DocKind.THESIS)
+    return kinds
+
+
 def visible_versions(case, user):
     versions = case.versions.select_related("uploaded_by").prefetch_related("reviews__assignment__referee")
     if sees_all_versions(case, user):
         return versions.order_by("kind", "-number")
-    latest = [latest_version(case, kind).pk for kind in DocKind.values if latest_version(case, kind)]
+    latest = [v.pk for kind in _shared_kinds(case, user) if (v := latest_version(case, kind))]
     return versions.filter(pk__in=latest).order_by("kind", "-number")
 
 
@@ -230,14 +321,17 @@ def visible_events(case, user):
     events = case.events.select_related("actor")
     if sees_all_versions(case, user):
         return events
-    latest = {kind: v.number for kind in DocKind.values if (v := latest_version(case, kind))}
+    latest = {kind: v.number for kind in _shared_kinds(case, user) if (v := latest_version(case, kind))}
     return [e for e in events
             if not e.action.startswith("upload_")
             or e.data.get("version") == latest.get(e.action.removeprefix("upload_"))]
 
 
 def can_download(case, user, version):
-    return sees_all_versions(case, user) or version.pk == getattr(latest_version(case, version.kind), "pk", None)
+    if sees_all_versions(case, user):
+        return True
+    return (version.kind in _shared_kinds(case, user)
+            and version.pk == getattr(latest_version(case, version.kind), "pk", None))
 
 
 # ───────────────────────── اثرات هر گذار ─────────────────────────
@@ -335,18 +429,66 @@ def _thesis_approve(c):
     c.data["late"] = _satisfy(c.case, DeadlineKind.THESIS_DELIVERY, c.today)
 
 
-def _schedule_defense(c):
-    defense_date = c.payload.get("defense_date")
-    place = (c.payload.get("defense_place") or "").strip()
-    if not defense_date or not place:
-        raise GuardFailed("تاریخ و محل دفاع هر دو الزامی‌اند.")
-    earliest = rules.add_months(c.case.final_approved_at, rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)
-    if defense_date < earliest:
-        raise GuardFailed(f"دفاع باید حداقل {fa_digits(rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)} ماه پس از "
-                          f"تصویب نهایی باشد؛ زودترین تاریخ مجاز {to_jalali(earliest)} است.")
-    c.case.defense_date = defense_date
-    c.case.defense_place = place
-    c.data.update(defense_date=defense_date.isoformat(), defense_place=place)
+def _request_defense(c):
+    """دانشجو چند روز و محل دفاع را پیشنهاد می‌دهد؛ ساعت‌ها را استادان از میان rules.DEFENSE_TIME_SLOTS برمی‌گزینند."""
+    days = sorted({d for d in (c.payload.get("days") or []) if d})
+    place = " ".join((c.payload.get("place") or "").split())
+    if not place:
+        raise GuardFailed("محل برگزاری دفاع را بنویسید.")
+    if not rules.DEFENSE_MIN_DAYS <= len(days) <= rules.DEFENSE_MAX_DAYS:
+        raise GuardFailed(f"بین {fa_digits(rules.DEFENSE_MIN_DAYS)} تا {fa_digits(rules.DEFENSE_MAX_DAYS)} "
+                          "روزِ متفاوت برای دفاع پیشنهاد دهید.")
+    earliest = rules.earliest_defense_day(c.case.final_approved_at, c.today)
+    latest = earliest + timedelta(days=rules.DEFENSE_HORIZON_DAYS)
+    for day in days:
+        if day < earliest:
+            raise GuardFailed(f"روز {day_label(day)} زودتر از حد مجاز است. دفاع باید حداقل "
+                              f"{fa_digits(rules.MIN_MONTHS_APPROVAL_TO_DEFENSE)} ماه پس از تصویب نهایی و نه پیش از امروز "
+                              f"باشد؛ زودترین تاریخ مجاز {to_jalali(earliest)} است.")
+        if day > latest:
+            raise GuardFailed(f"روز {day_label(day)} خیلی دور است؛ روزها را تا {to_jalali(latest)} انتخاب کنید.")
+        if day.weekday() in rules.NO_DEFENSE_WEEKDAYS:
+            raise GuardFailed(f"{day_label(day)} روز تعطیل است؛ روز دیگری انتخاب کنید.")
+    request = DefenseRequest.objects.create(case=c.case, requested_by=c.actor, place=place,
+                                            days=[d.isoformat() for d in days])
+    c.data.update(request_id=request.pk, days=request.days, defense_place=place)
+
+
+def _pick_defense_time(c):
+    """
+    یک استاد (راهنما یا داور) زمان‌های آزاد خود را از میان زمان‌های درخواست ثبت می‌کند. وقتی همه
+    انتخاب کردند، زودترین زمانِ مشترک روز و ساعت دفاع می‌شود؛ اگر زمان مشترکی نباشد پرونده به
+    دانشجو برمی‌گردد تا روزهای دیگری پیشنهاد دهد.
+    """
+    request = open_defense_request(c.case)
+    allowed = set(request.slot_keys())
+    slots = sorted({str(k) for k in (c.payload.get("slots") or [])})
+    if not slots:
+        raise GuardFailed("حداقل یک روز و ساعت را انتخاب کنید.")
+    if not set(slots) <= allowed:
+        raise GuardFailed("زمان انتخاب‌شده در میان زمان‌های پیشنهادی دانشجو نیست.")
+    role = CaseRole.ADVISOR if c.actor.pk == c.case.advisor_id else CaseRole.REFEREE
+    DefenseAvailability.objects.create(request=request, professor=c.actor, role=role, slots=slots)
+    c.data.update(request_id=request.pk, slots=slots)
+
+    professors = [u.pk for u, _ in defense_professors(c.case)]
+    picked = {a.professor_id: a.slots for a in request.availabilities.all()}
+    if any(pk not in picked for pk in professors):
+        return State.DEFENSE_REQUESTED          # هنوز همه‌ی استادان انتخاب نکرده‌اند
+    chosen = rules.first_common_slot([picked[pk] for pk in professors])
+    if chosen is None:
+        request.status = DefenseRequest.Status.NO_MATCH
+        request.save(update_fields=["status"])
+        c.data["no_match"] = True
+        return State.THESIS_SUBMITTED
+    day, hour = chosen.split("T")
+    request.status, request.chosen_slot = DefenseRequest.Status.SCHEDULED, chosen
+    request.save(update_fields=["status", "chosen_slot"])
+    c.case.defense_date = date.fromisoformat(day)
+    c.case.defense_time = time.fromisoformat(hour)
+    c.case.defense_place = request.place
+    c.data.update(defense_date=day, defense_time=hour, defense_place=request.place)
+    return State.DEFENSE_SCHEDULED
 
 
 def _record_result(c):
@@ -375,7 +517,9 @@ _EFFECTS = {
     "submit_review": _submit_review,
     "council_approve": _council_approve,
     "thesis_approve": _thesis_approve,
-    "schedule_defense": _schedule_defense,
+    "request_defense": _request_defense,
+    "advisor_pick_defense_time": _pick_defense_time,
+    "referee_pick_defense_time": _pick_defense_time,
     "record_result": _record_result,
 }
 
@@ -450,6 +594,7 @@ EXTRA_ACTION_LABELS = {
     # اقدام‌های حذف‌شده از گردش‌کار؛ فقط برای نمایش تاریخچه‌ی پرونده‌های قدیمی
     "group_approve": "تصویب پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
     "group_reject": "رد پیشنهاد در گروه (مرحله‌ی حذف‌شده)",
+    "schedule_defense": "تعیین زمان و مکان دفاع توسط آموزش (مرحله‌ی حذف‌شده)",
 }
 MAX_AREA_CHARS = 200
 MAX_INTERESTS_CHARS = 1500
@@ -677,8 +822,14 @@ def doc_decision(case, user, version):
 
 
 def can_comment(case, user, version):
-    """استاد راهنما و داوران تا پایان پرونده روی آخرین نسخه‌ی سند نظر می‌گذارند."""
-    if case.is_terminal or not case.roles_of(user) & {CaseRole.ADVISOR, CaseRole.REFEREE}:
+    """
+    استاد راهنما و داوران تا پایان پرونده روی آخرین نسخه‌ی پیشنهاد نظر می‌گذارند؛ پایان‌نامه را فقط
+    استاد راهنما (داور پایان‌نامه را تنها مشاهده می‌کند).
+    """
+    roles = case.roles_of(user)
+    if case.is_terminal or not roles & {CaseRole.ADVISOR, CaseRole.REFEREE}:
+        return False
+    if version.kind == DocKind.THESIS and CaseRole.ADVISOR not in roles:
         return False
     latest = latest_version(case, version.kind)
     return latest is not None and latest.pk == version.pk
