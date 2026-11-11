@@ -250,8 +250,8 @@ SCENARIOS = [
             S(defense_day, "@advisor", "record_result", expect=State.COMPLETED, check=not_graded),
         )),
     Scenario(
-        "council_reject", "رد پیشنهاد در شورا و ثبت دوباره", "student", "databases",
-        description="پس از رد در شورای دانشکده، دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه ثبت کند.",
+        "council_reject", "رد پیشنهاد در شورا و بازگشت به تدوین", "student", "databases",
+        description="با رد در شورای دانشکده پرونده با همان استاد راهنما به تدوین پیشنهاد برمی‌گردد و ادامه می‌یابد.",
         steps=(
             S(0, "@author", "create", expect=State.ADVISOR_SELECTION),
             S(0, "@author", "select_advisor", {"advisor": "@advisor"}, State.ADVISOR_PENDING),
@@ -267,8 +267,9 @@ SCENARIOS = [
             S(4, "@head", "assign_referees", {"referees": ["@ref_net"]}, State.REFEREE_REVIEW),
             S(15, "@ref_net", "submit_review", {"decision": APPROVE}, State.COUNCIL_APPROVAL),
             S(20, "@edu", "council_reject", expect=GUARD, note="رد بدون توضیح ممکن نیست"),
-            S(20, "@edu", "council_reject", {"note": "موضوع با برنامه‌ی دانشکده هم‌خوان نیست."}, State.REJECTED),
-            S(21, "@author", "create", expect=State.ADVISOR_SELECTION, note="پرونده‌ی تازه در همان نیم‌سال"),
+            S(20, "@edu", "council_reject", {"note": "موضوع با برنامه‌ی دانشکده هم‌خوان نیست."}, State.DRAFTING,
+              check=has_feedback("موضوع با برنامه‌ی دانشکده هم‌خوان نیست."), note="دانشجو دلیل رد را در پرونده می‌بیند"),
+            S(21, "@author", "create", expect=GUARD, note="همان پرونده ادامه می‌یابد؛ پرونده‌ی تازه لازم نیست"),
         )),
     Scenario(
         "late_and_reminders", "تأخیر در تحویل پیشنهاد و یادآوری مهلت", "student", "llm_agents",

@@ -163,7 +163,7 @@ def sign_seeded(case):
     پرونده‌هایی که از تأیید پیشنهاد یا پایان‌نامه گذشته‌اند، مثل مسیر واقعی، نسخه‌ی امضاشده دارند:
     پیشنهاد با امضای استاد راهنما (و پس از داوری، داوران) و پایان‌نامه‌ی تحویل‌شده با امضای استاد راهنما.
     """
-    if case.state in (State.REJECTED, State.CANCELLED):
+    if case.state == State.CANCELLED:
         return
     order = list(State)
     reached = lambda s: order.index(case.state) >= order.index(s)     # noqa: E731

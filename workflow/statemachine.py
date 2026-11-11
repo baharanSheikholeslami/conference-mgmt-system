@@ -40,7 +40,7 @@ ACTION_TONES = {
 }
 
 INITIAL_STATE = S.ADVISOR_SELECTION
-TERMINAL_STATES = (S.COMPLETED, S.REJECTED, S.CANCELLED)
+TERMINAL_STATES = (S.COMPLETED, S.CANCELLED)
 ACTIVE_STATES = tuple(s for s in S if s not in TERMINAL_STATES)
 
 _T = Transition
@@ -84,7 +84,9 @@ TRANSITIONS = {t.action: t for t in [
        (S.COUNCIL_APPROVAL,), (S.IN_PROGRESS,),
        effects=("final_approved_at = امروز", "مهلت DEFENSE_EARLIEST (تصویب + ۳ ماه) ساخته می‌شود")),
     _T("council_reject", "رد پیشنهاد در شورای دانشکده", Role.EDU,
-       (S.COUNCIL_APPROVAL,), (S.REJECTED,), note_required=True),
+       (S.COUNCIL_APPROVAL,), (S.DRAFTING,), note_required=True,
+       effects=("پرونده با همان استاد راهنما به تدوین پیشنهاد برمی‌گردد و دانشجو دلیل رد را می‌بیند",
+                "edu_received_at پاک می‌شود تا پیشنهاد تازه دوباره ثبت و داوری شود و مهلت داوری از نو آغاز شود")),
     _T("submit_thesis", "ارسال پایان‌نامه برای تأیید استاد راهنما", Role.AUTHOR,
        (S.IN_PROGRESS,), (S.THESIS_ADVISOR_REVIEW,),
        guards=("حداقل یک نسخه‌ی «پایان‌نامه» بارگذاری شده باشد",)),

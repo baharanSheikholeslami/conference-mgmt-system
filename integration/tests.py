@@ -71,8 +71,8 @@ class ScenarioTests(TestCase):
         other = User.objects.create_user("real_student")
         ProjectCase.objects.create(author=other, title_fa="پرونده‌ی واقعی", academic_year=1405,
                                    semester="first", registration_date="2026-10-01")
-        self.assertEqual(scenario_cases().count(), 3)
-        self.assertEqual(cleanup(), 3)
+        self.assertEqual(scenario_cases().count(), 2)            # هر سناریو یک پرونده
+        self.assertEqual(cleanup(), 2)
         self.assertEqual(ProjectCase.objects.count(), 1)
         scenario_users = User.objects.filter(username__startswith=PREFIX)
         self.assertTrue(scenario_users.exists())                      # کاربران برای اجرای بعد می‌مانند…

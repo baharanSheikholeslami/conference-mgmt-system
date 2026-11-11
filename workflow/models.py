@@ -104,7 +104,7 @@ class ProjectCase(models.Model):
                 name="grade_between_0_and_20"),
             models.UniqueConstraint(
                 fields=["author", "academic_year", "semester"],
-                condition=~Q(state__in=[State.REJECTED, State.CANCELLED]),
+                condition=~Q(state=State.CANCELLED),
                 name="one_active_case_per_author_term"),
         ]
 
@@ -136,7 +136,7 @@ class ProjectCase(models.Model):
 
     @property
     def is_terminal(self):
-        return self.state in (State.COMPLETED, State.REJECTED, State.CANCELLED)
+        return self.state in (State.COMPLETED, State.CANCELLED)
 
     # ── نقش‌های زمینه‌ای ──
     def roles_of(self, user):

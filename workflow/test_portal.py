@@ -309,7 +309,7 @@ class SeedDemoFullTests(TestCase):
         states = set(ProjectCase.objects.values_list("state", flat=True))
         self.assertEqual(ProjectCase.objects.count(), base + 10)
         self.assertEqual(states, set(State) - {State.ADVISOR_SELECTION, State.COMPLETED,
-                                                 State.REJECTED, State.CANCELLED})
+                                                 State.CANCELLED})
 
     def test_seeded_advisors_respect_the_capacity_and_the_request_is_pending(self):
         from workflow import services

@@ -38,7 +38,6 @@ class State(models.TextChoices):
     DEFENSE_REQUESTED = "defense_requested", "درخواست دفاع؛ در انتظار انتخاب زمان استادان"
     DEFENSE_SCHEDULED = "defense_scheduled", "زمان و مکان دفاع تعیین شد"
     COMPLETED = "completed", "تکمیل‌شده"
-    REJECTED = "rejected", "ردشده"
     CANCELLED = "cancelled", "لغوشده"
 
 

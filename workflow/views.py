@@ -47,8 +47,8 @@ PHASE_OF = {state: i for i, (_, states) in enumerate(PHASES) for state in states
 
 
 def phases(case):
-    """گام‌های نوار مرحله‌ها: done / current / next. پرونده‌ی ردشده یا لغوشده نوار ندارد."""
-    if case.state in (State.REJECTED, State.CANCELLED):
+    """گام‌های نوار مرحله‌ها: done / current / next. پرونده‌ی لغوشده نوار ندارد."""
+    if case.state == State.CANCELLED:
         return []
     current = len(PHASES) if case.state == State.COMPLETED else PHASE_OF[case.state]
     return [{"label": label, "status": "done" if i < current else "current" if i == current else "next"}
@@ -183,7 +183,7 @@ def _edu_context(rows):
         "phase_rows": phase_rows,
         "overdue": overdue,
         "totals": {"active": sum(counts[s] for s in sm.ACTIVE_STATES), "completed": counts[State.COMPLETED],
-                   "stopped": counts[State.REJECTED] + counts[State.CANCELLED]},
+                   "stopped": counts[State.CANCELLED]},
     }
 
 
@@ -204,7 +204,7 @@ def dashboard(request):
         "timers": _timers(rows, user),
         "faculty": faculty,
         "advisees": [r for r in rows if CaseRole.ADVISOR in r.role_set and r.case.state not in (
-            State.ADVISOR_SELECTION, State.REJECTED, State.CANCELLED)] if faculty else [],
+            State.ADVISOR_SELECTION, State.CANCELLED)] if faculty else [],
         "refereeing": [r for r in rows if CaseRole.REFEREE in r.role_set] if faculty else [],
         "capacity": {"used": services.advisee_count(user), "max": rules.MAX_ADVISEES} if faculty else None,
         "is_edu": is_edu,
