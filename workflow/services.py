@@ -66,7 +66,7 @@ def latest_version(case, kind):
 
 
 # پرونده‌هایی که راهنمایشان هنوز استاد را «مشغول» نکرده‌اند (درخواست رد یا بی‌پاسخ، یا پروژه تمام شده)
-_NOT_COUNTED_FOR_ADVISOR = (State.ADVISOR_SELECTION, State.ADVISOR_PENDING, State.REJECTED,
+_NOT_COUNTED_FOR_ADVISOR = (State.ADVISOR_SELECTION, State.ADVISOR_PENDING,
                             State.CANCELLED, State.COMPLETED)
 
 
@@ -260,6 +260,7 @@ _RETURN_TITLES = {
     "thesis_return": "استاد راهنما پایان‌نامه را برای اصلاح برگرداند",
     "advisor_decline": "استاد راهنما درخواست راهنمایی شما را نپذیرفت؛ استاد دیگری انتخاب کنید",
     "submit_review": "داوران پیشنهاد را برای اصلاح برگرداندند",
+    "council_reject": "شورای دانشکده پیشنهاد را رد کرد؛ پیشنهاد تازه‌ای تدوین و دوباره ارسال کنید",
     "advisor_pick_defense_time": "میان زمان‌های انتخابی استادان زمان مشترکی پیدا نشد؛ روزهای دیگری برای دفاع پیشنهاد دهید",
     "referee_pick_defense_time": "میان زمان‌های انتخابی استادان زمان مشترکی پیدا نشد؛ روزهای دیگری برای دفاع پیشنهاد دهید",
 }
@@ -424,6 +425,15 @@ def _council_approve(c):
     c.case.final_approved_at = c.today      # مهلت DEFENSE_EARLIEST را sync_deadlines می‌سازد
 
 
+def _council_reject(c):
+    """
+    پیشنهاد رد شد و پرونده با همان استاد راهنما به تدوین پیشنهاد برمی‌گردد. پیشنهاد تازه دوباره
+    از تأیید استاد، ثبت در آموزش و داوری می‌گذرد؛ پس مهلت داوری (GROUP_REVIEW) با ثبت تازه از نو آغاز می‌شود.
+    """
+    c.case.edu_received_at = None
+    c.case.deadlines.filter(kind=DeadlineKind.GROUP_REVIEW).delete()
+
+
 def _thesis_approve(c):
     c.case.thesis_submitted_at = c.today
     c.data["late"] = _satisfy(c.case, DeadlineKind.THESIS_DELIVERY, c.today)
@@ -516,6 +526,7 @@ _EFFECTS = {
     "assign_referees": _assign_referees,
     "submit_review": _submit_review,
     "council_approve": _council_approve,
+    "council_reject": _council_reject,
     "thesis_approve": _thesis_approve,
     "request_defense": _request_defense,
     "advisor_pick_defense_time": _pick_defense_time,
@@ -665,7 +676,7 @@ def create_case(author, research_area="", interests="", academic_year=None, seme
     academic_year = academic_year or default_year
     semester = semester or default_semester
     same_term = ProjectCase.objects.filter(author=author, academic_year=academic_year, semester=semester)
-    if same_term.exclude(state__in=[State.REJECTED, State.CANCELLED]).exists():
+    if same_term.exclude(state=State.CANCELLED).exists():
         raise GuardFailed("شما در این نیم‌سال یک پرونده‌ی فعال دارید.")
     case = ProjectCase.objects.create(
         author=author, research_area=research_area, interests=interests,

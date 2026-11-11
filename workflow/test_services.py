@@ -329,17 +329,27 @@ class GuardTests(WorkflowTestCase):
             case = self.do(case, "record_result", self.advisor, grade="18")
         self.assertEqual(case.state, State.COMPLETED)
 
-    def test_rejection_and_cancellation_are_terminal(self):
+    def test_council_rejection_returns_to_drafting_and_cancellation_is_terminal(self):
         case = self.to_referee_review()
         case = self.do(case, "submit_review", self.ref1, decision=ReviewDecision.APPROVE)
         self.assertEqual(case.state, State.COUNCIL_APPROVAL)
         case = self.do(case, "council_reject", self.edu, note="موضوع تکراری است")
-        self.assertEqual(case.state, State.REJECTED)
+        # رد در شورا پرونده را نمی‌بندد: با همان استاد راهنما به تدوین پیشنهاد برمی‌گردد
+        self.assertEqual((case.state, case.advisor), (State.DRAFTING, self.advisor))
+        self.assertEqual(services.pending_feedback(case)["items"][0]["note"], "موضوع تکراری است")
+        # مهلت داوری با ثبت دوباره‌ی پیشنهاد از نو آغاز می‌شود
+        self.assertIsNone(case.edu_received_at)
+        self.assertFalse(case.deadlines.filter(kind=DeadlineKind.GROUP_REVIEW).exists())
+        with self.assertRaises(services.GuardFailed):     # همان پرونده ادامه می‌یابد، نه پرونده‌ی تازه
+            self.new_case()
+        services.upload_document(case, self.student, DocKind.PROPOSAL, pdf())
+        case = self.do(case, "submit_proposal", self.student)
+        self.assertEqual(case.state, State.ADVISOR_REVIEW)
+        # لغو پرونده را می‌بندد و پس از آن دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه بسازد
+        case = self.do(case, "cancel", self.edu, note="انصراف دانشجو")
+        self.assertEqual(case.state, State.CANCELLED)
         self.assertEqual(services.available_actions(case, self.edu), [])
-        # پس از رد، دانشجو می‌تواند در همان نیم‌سال پرونده‌ی تازه بسازد
-        fresh = self.new_case()
-        fresh = self.do(fresh, "cancel", self.edu, note="انصراف دانشجو")
-        self.assertEqual(fresh.state, State.CANCELLED)
+        self.assertEqual(self.new_case().state, State.ADVISOR_SELECTION)
 
 
 class DeadlineTests(WorkflowTestCase):
