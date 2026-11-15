@@ -26,11 +26,13 @@
         <li>
           <strong>{{ row.referee }}</strong>
           <span class="badge plain">گروه {{ row.referee.department }}</span>
-          {% if row.percent is not None %}<span class="badge">تطبیق با علایق شما {{ row.percent|fa }}٪</span>
+          {% if row.ai_score is not None %}<span class="badge">تناسب با علایق شما از نگاه عامل {{ row.ai_score|fa }}٪</span>
+          {% if row.similarity_percent is not None %}<span class="badge plain">شباهت معنایی {{ row.similarity_percent|fa }}٪</span>{% endif %}
+          {% elif row.percent is not None %}<span class="badge">تطبیق با علایق شما {{ row.percent|fa }}٪</span>
           {% else %}<span class="badge plain">تخصص ثبت نشده</span>{% endif %}
           <span class="badge plain">دانشجویان در جریان: {{ row.load|fa }}</span>
           {% if row.referee.expertise %}<p class="muted">زمینه‌های تخصصی: {{ row.referee.expertise }}</p>{% endif %}
-          {% if row.reason %}<p>{{ row.reason }}</p>{% endif %}
+          {% if row.reason %}<p class="suggestion-reason">{% if row.ai_score is not None %}<span class="agent-tag">دلیل عامل</span> {% endif %}{{ row.reason }}</p>{% endif %}
         </li>
       {% endfor %}
       </ol>
@@ -38,5 +40,5 @@
       <p class="agent-warning">{% if run.is_stale %}پاسخی از سرویس پیشنهاد استاد نرسید.{% else %}{{ run.error|default:"پیشنهادی آماده نشد." }}{% endif %}</p>
     {% endif %}
   {% endif %}
-  <p class="agent-note">{% if run.is_keyword %}این رتبه‌بندی فقط واژه‌های مشترک متن شما و «زمینه‌های تخصصی» اساتید را می‌شمارد.{% else %}رتبه‌بندی بر پایه‌ی شباهت معنایی متن شما با «زمینه‌های تخصصی» ثبت‌شده‌ی اساتید است و ممکن است دقیق نباشد.{% endif %} انتخاب استاد راهنما با خود شماست؛ درخواست شما برای استاد فرستاده می‌شود و پس از پذیرش او، پیشنهاد پروژه را می‌نویسید.</p>
+  <p class="agent-note">{% if run.is_keyword %}این رتبه‌بندی فقط واژه‌های مشترک متن شما و «زمینه‌های تخصصی» اساتید را می‌شمارد.{% elif ai_ranked %}رتبه‌بندی را عامل هوش مصنوعی انجام داده است: ابتدا اساتید نزدیک با شباهت معنایی غربال شدند، سپس عامل تناسب «زمینه‌های تخصصی» هر استاد با متن شما را نمره داد و دلیلش را نوشت. ممکن است دقیق نباشد.{% else %}رتبه‌بندی بر پایه‌ی شباهت معنایی متن شما با «زمینه‌های تخصصی» ثبت‌شده‌ی اساتید است و ممکن است دقیق نباشد.{% endif %} انتخاب استاد راهنما با خود شماست؛ درخواست شما برای استاد فرستاده می‌شود و پس از پذیرش او، پیشنهاد پروژه را می‌نویسید.</p>
 </section>
