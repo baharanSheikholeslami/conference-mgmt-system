@@ -273,12 +273,17 @@ def _sources(raw):
 
 
 # ───────────────────────── ۳. عامل تطبیق: پیشنهاد داور و استاد راهنما ─────────────────────────
-# هر دو با یک گردش‌کار در n8n انجام می‌شوند (suggest-referees): موضوع و «زمینه‌های تخصصی» اساتید
-# به بردار تبدیل و با شباهت کسینوسی رتبه‌بندی می‌شوند. فرق فقط در «موضوع» و «نامزدها» است و
-# هر دو را پورتال با قواعد قطعی تعیین می‌کند.
+# هر دو با یک گردش‌کار در n8n انجام می‌شوند (suggest-referees). تقسیم کار:
+#   • پورتال (قواعد قطعی): چه کسی نامزد است — ظرفیت راهنمایی، تعارض منافع (راهنما و نویسنده داور
+#     نمی‌شوند)، گروه آموزشی — و ساختن رتبه‌ی نهایی از روی نمره‌های عامل (هم‌نمره‌ها: بار کاری کمتر جلوتر)
+#   • عامل هوش مصنوعی (n8n): ۱) غربال اولیه با شباهت embedding، ۲) مدل زبانی به تناسب تخصص هر استادِ
+#     فهرست کوتاه با موضوع نمره‌ی ۰ تا ۱۰۰ می‌دهد و دلیلش را در یک جمله‌ی فارسی می‌نویسد.
+# اگر مدل زبانی پاسخ ندهد، ترتیب شباهت معنایی می‌ماند؛ اگر n8n یا embedding در دسترس نباشد یا پاسخ
+# در STALE_AFTER نرسد، پورتال خودش رتبه‌بندی کلیدواژه‌ای می‌کند تا کاربر هیچ‌وقت بی‌پیشنهاد نماند.
 
 TOPIC_EXCERPT_CHARS = 2000
-EXPLAIN_TOP = 5
+EXPLAIN_TOP = 5              # قرارداد قدیمی؛ نسخه‌های پیشین گردش‌کار فقط برای این تعداد توجیه می‌نوشتند
+RERANK_TOP = 10              # چند نامزد برتر شباهت معنایی را مدل زبانی نمره می‌دهد
 MIN_INTERESTS_CHARS = 3
 MAX_INTERESTS_CHARS = wf.MAX_AREA_CHARS + wf.MAX_INTERESTS_CHARS
 REFEREE, ADVISOR = SuggestionRun.Purpose.REFEREE, SuggestionRun.Purpose.ADVISOR
@@ -340,6 +345,7 @@ def _request_suggestions(case, purpose, query):
         "query_text": query,
         "candidates": _candidate_rows(candidates),
         "explain_top": EXPLAIN_TOP,
+        "rerank_top": RERANK_TOP,
     }
     try:
         n8n.post("suggest-referees", payload)
@@ -374,37 +380,94 @@ def request_advisor_suggestions(case, research_area=None, interests=None, user=N
     return _request_suggestions(case, ADVISOR, case.interests_text)
 
 
+def _number(value):
+    return float(value) if isinstance(value, Real) and not isinstance(value, bool) else None
+
+
+def current_load(purpose, user_ids):
+    """{شناسه‌ی استاد: تعداد} پرونده‌های راهنمایی (برای راهنما) یا داوری‌های (برای داور) در جریان."""
+    if purpose == ADVISOR:
+        busy = (ProjectCase.objects.filter(advisor__in=user_ids)
+                .exclude(state__in=sm.TERMINAL_STATES).values_list("advisor"))
+    else:
+        busy = (RefereeAssignment.objects.filter(referee__in=user_ids)
+                .exclude(case__state__in=sm.TERMINAL_STATES).values_list("referee"))
+    return dict(busy.annotate(n=Count("id")))
+
+
+def final_order(rows, load):
+    """
+    رتبه‌ی نهایی (قاعده‌ی قطعی پورتال) از روی خروجی عامل. rows: {pk: (similarity, ai_score, reason)}
+      ۱. نامزدهایی که عامل هوش مصنوعی نمره داده، به ترتیب نمره (بیشتر جلوتر)
+      ۲. بقیه به ترتیب شباهت معنایی
+      ۳. استادانی که تخصصشان ثبت نشده، در انتها
+    در هر گروه، هم‌امتیازها: بار کاری کمتر جلوتر، سپس شباهت معنایی بیشتر.
+    """
+    def key(item):
+        pk, (similarity, ai_score, _) = item
+        group = 0 if ai_score is not None else 1 if similarity is not None else 2
+        main = ai_score if ai_score is not None else (similarity or 0)
+        return (group, -main, load.get(pk, 0), -(similarity or 0), pk)
+    return sorted(rows.items(), key=key)
+
+
 def _store_suggestions(run, raw, model, note=""):
-    """فقط اساتیدی ذخیره می‌شوند که واقعاً نامزد واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال از روی score می‌سازد."""
+    """
+    فقط اساتیدی ذخیره می‌شوند که واقعاً نامزد واجد شرایط همین پرونده‌اند؛ رتبه را خود پورتال با
+    final_order می‌سازد. هر ردیف خام: {"referee_id", "similarity", "ai_score", "reason"}؛ پاسخ گردش‌کارهای
+    قدیمی و مسیر کلیدواژه‌ای فقط "score" دارند که همان شباهت است.
+    """
     eligible = set(candidates_for(run.case, run.purpose).values_list("pk", flat=True))
     rows = {}
     for s in raw or []:
         pk = s.get("referee_id") if isinstance(s, dict) else None
-        if not isinstance(pk, int) or pk not in eligible or pk in rows:
+        if not isinstance(pk, int) or isinstance(pk, bool) or pk not in eligible or pk in rows:
             continue
-        score = s.get("score")
-        score = float(score) if isinstance(score, Real) and not isinstance(score, bool) else None
-        rows[pk] = (score, str(s.get("reason") or "").strip()[:600])
-    ordered = sorted(rows.items(), key=lambda row: (row[1][0] is None, -(row[1][0] or 0)))
+        similarity = _number(s.get("similarity", s.get("score")))
+        ai_score = _number(s.get("ai_score"))
+        ai_score = None if ai_score is None else int(round(max(0.0, min(100.0, ai_score))))
+        rows[pk] = (similarity, ai_score, str(s.get("reason") or "").strip()[:600])
+    ordered = final_order(rows, current_load(run.purpose, list(rows)))
     with transaction.atomic():
         run.suggestions.all().delete()
         RefereeSuggestion.objects.bulk_create([
-            RefereeSuggestion(run=run, referee_id=pk, rank=rank, score=score, reason=reason)
-            for rank, (pk, (score, reason)) in enumerate(ordered, 1)])
+            RefereeSuggestion(run=run, referee_id=pk, rank=rank, similarity=similarity, ai_score=ai_score,
+                              score=ai_score / 100 if ai_score is not None else similarity, reason=reason)
+            for rank, (pk, (similarity, ai_score, reason)) in enumerate(ordered, 1)])
         _finish(run, status=SuggestionRun.Status.DONE, error=note, model=model)
     return run
 
 
 def save_referee_suggestions(run, data):
     """
-    پاسخ n8n: {"suggestions": [{"referee_id", "score", "reason"}], "model": "..."} یا {"error": "..."}
-    اگر n8n خطا برگرداند (مثلاً مدل embedding پاسخ نداد)، رتبه‌بندی کلیدواژه‌ای جایگزین می‌شود.
+    پاسخ n8n: {"suggestions": [{"referee_id", "similarity", "ai_score", "reason"}], "model": "...",
+    "rerank_error": "..."} یا {"error": "..."}
+    • error (مثلاً مدل embedding پاسخ نداد) ← رتبه‌بندی کلیدواژه‌ای جایگزین می‌شود
+    • rerank_error (مدل زبانی نمره نداد) ← ترتیب شباهت معنایی می‌ماند و یادداشتی نمایش داده می‌شود
+    پاسخی که دیر برسد (پس از جایگزینی کلیدواژه‌ای به‌خاطر تأخیر) همچنان پذیرفته می‌شود و آن را کنار می‌زند.
     """
     model = str(data.get("model") or "")
     if data.get("error"):
         log.warning("suggestions %s: %s — %s", run.pk, data["error"], data.get("detail", ""))
         return _keyword_fallback(run, f"{str(data['error'])[:120]} پیشنهادها با تطبیق کلیدواژه‌ای ساخته شد.")
-    return _store_suggestions(run, data.get("suggestions"), model)
+    note = ""
+    if data.get("rerank_error"):
+        log.warning("suggestions %s rerank: %s", run.pk, data["rerank_error"])
+        note = "عامل هوش مصنوعی نمره‌ی تناسب نداد؛ ترتیب فقط بر پایه‌ی شباهت معنایی است."
+    return _store_suggestions(run, data.get("suggestions"), model, note=note)
+
+
+STALE_NOTE = "پاسخ عامل هوش مصنوعی به‌موقع نرسید؛ پیشنهادها با تطبیق کلیدواژه‌ای ساخته شد."
+
+
+def _settle_stale(run):
+    """اگر پاسخ n8n در مهلت (STALE_AFTER) نرسیده باشد، کاربر منتظر نمی‌ماند: مسیر کلیدواژه‌ای."""
+    if run is not None and run.is_stale:
+        try:
+            _keyword_fallback(run, STALE_NOTE)
+        except Exception:
+            log.exception("keyword fallback for stale run %s failed", run.pk)
+    return run
 
 
 def suggestions_visible_to(user, purpose=REFEREE):
@@ -421,6 +484,7 @@ def suggestion_ranks(case, purpose=REFEREE, user=None):
     """{شناسه‌ی استاد: رتبه} برای مرتب‌کردن فرم انتخاب؛ خالی اگر پیشنهادی آماده نباشد یا کاربر نبیند."""
     if not suggestions_visible_to(user, purpose):
         return {}
+    _settle_stale(SuggestionRun.objects.filter(case=case, purpose=purpose).first())
     return dict(RefereeSuggestion.objects.filter(run__case=case, run__purpose=purpose,
                                                  run__status=SuggestionRun.Status.DONE)
                 .values_list("referee_id", "rank"))
@@ -430,19 +494,14 @@ def suggestion_panel(case, purpose=REFEREE, user=None):
     """داده‌ی کادر «پیشنهاد سامانه» در فرم انتخاب داور / استاد راهنما (یا None اگر نمایش داده نشود)."""
     if not suggestions_visible_to(user, purpose):
         return None
-    run = SuggestionRun.objects.filter(case=case, purpose=purpose).first()
+    run = _settle_stale(SuggestionRun.objects.filter(case=case, purpose=purpose).first())
     rows = list(run.suggestions.select_related("referee__department")) if run else []
     # بار کاری: داوری‌های در جریان (برای داور) یا پرونده‌های راهنمایی در جریان (برای استاد راهنما)
-    if purpose == ADVISOR:
-        busy = (ProjectCase.objects.filter(advisor__in=[r.referee_id for r in rows])
-                .exclude(state__in=sm.TERMINAL_STATES).values_list("advisor"))
-    else:
-        busy = (RefereeAssignment.objects.filter(referee__in=[r.referee_id for r in rows])
-                .exclude(case__state__in=sm.TERMINAL_STATES).values_list("referee"))
-    load = dict(busy.annotate(n=Count("id")))
+    load = current_load(purpose, [r.referee_id for r in rows])
     for row in rows:
         row.load = load.get(row.referee_id, 0)
     return {"run": run, "rows": rows, "purpose": purpose, "case": case,
+            "ai_ranked": any(r.ai_score is not None for r in rows),
             "template": f"agents/_{purpose}_suggestions.html"}
 
 

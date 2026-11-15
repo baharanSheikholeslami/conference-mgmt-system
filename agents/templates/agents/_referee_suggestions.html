@@ -11,17 +11,19 @@
     {% for row in rows %}
       <li>
         <strong>{{ row.referee }}</strong>
-        {% if row.percent is not None %}<span class="badge">شباهت موضوعی {{ row.percent|fa }}٪</span>
+        {% if row.ai_score is not None %}<span class="badge">تناسب با موضوع از نگاه عامل {{ row.ai_score|fa }}٪</span>
+        {% if row.similarity_percent is not None %}<span class="badge plain">شباهت معنایی {{ row.similarity_percent|fa }}٪</span>{% endif %}
+        {% elif row.percent is not None %}<span class="badge">شباهت موضوعی {{ row.percent|fa }}٪</span>
         {% else %}<span class="badge plain">تخصص ثبت نشده</span>{% endif %}
         <span class="badge plain">داوری‌های در جریان: {{ row.load|fa }}</span>
-        {% if row.reason %}<p>{{ row.reason }}</p>{% endif %}
+        {% if row.reason %}<p class="suggestion-reason">{% if row.ai_score is not None %}<span class="agent-tag">دلیل عامل</span> {% endif %}{{ row.reason }}</p>{% endif %}
       </li>
     {% endfor %}
     </ol>
   {% else %}
     <p class="agent-warning">{% if run.is_stale %}پاسخی از سرویس پیشنهاد داور نرسید.{% else %}{{ run.error|default:"پیشنهادی آماده نشد." }}{% endif %}</p>
   {% endif %}
-  <p class="agent-note">رتبه‌بندی فقط بر پایه‌ی شباهت معنایی موضوع پیشنهاد با «زمینه‌های تخصصی» اعضای همین گروه است و ممکن است دقیق نباشد. این فهرست صرفاً پیشنهاد است؛ انتخاب داور با شماست.</p>
+  <p class="agent-note">{% if run.is_keyword %}این رتبه‌بندی فقط واژه‌های مشترک موضوع پیشنهاد و «زمینه‌های تخصصی» اعضای همین گروه را می‌شمارد.{% elif ai_ranked %}رتبه‌بندی را عامل هوش مصنوعی انجام داده است: اعضای واجد شرایط گروه (غیر از راهنما و نویسنده) با شباهت معنایی غربال شدند، سپس عامل تناسب تخصص هر نفر با موضوع پیشنهاد را نمره داد و دلیلش را نوشت؛ در نمره‌های برابر، داور با داوری‌های در جریان کمتر جلوتر است. ممکن است دقیق نباشد.{% else %}رتبه‌بندی فقط بر پایه‌ی شباهت معنایی موضوع پیشنهاد با «زمینه‌های تخصصی» اعضای همین گروه است و ممکن است دقیق نباشد.{% endif %} این فهرست صرفاً پیشنهاد است؛ انتخاب داور با شماست.</p>
   {% if not run.is_waiting %}
     <form method="post" action="{% url 'suggestions_refresh' case.pk %}">{% csrf_token %}
       <button class="btn secondary small" type="submit">{% if run %}درخواست دوباره‌ی پیشنهاد{% else %}درخواست پیشنهاد{% endif %}</button>

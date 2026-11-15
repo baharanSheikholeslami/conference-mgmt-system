@@ -129,8 +129,9 @@ class SuggestionRun(_AgentRun):
       • referee — پیشنهاد داور به مدیر گروه (موضوع = عنوان + مقدمه‌ی پیشنهاد)
       • advisor — پیشنهاد استاد راهنما به دانشجو (متن = حوزه + علایقی که خود دانشجو هنگام ثبت پرونده
         نوشته؛ دانشجو در این مرحله هنوز موضوعی ندارد)
-    اگر n8n یا مدل embedding در دسترس نباشد، پورتال رتبه‌بندی کلیدواژه‌ای را جایگزین می‌کند
-    (model = keyword-fallback).
+    رتبه‌بندی را عامل هوش مصنوعی انجام می‌دهد (embedding برای غربال + مدل زبانی برای نمره‌ی تناسب).
+    اگر n8n یا مدل‌ها در دسترس نباشند یا پاسخ در STALE_AFTER نرسد، پورتال رتبه‌بندی کلیدواژه‌ای را
+    جایگزین می‌کند (model = keyword-fallback).
     """
 
     class Purpose(models.TextChoices):
@@ -168,8 +169,15 @@ class RefereeSuggestion(models.Model):
     referee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+",
                                 verbose_name="استاد پیشنهادی")
     rank = models.PositiveSmallIntegerField("رتبه")
-    score = models.FloatField("شباهت معنایی", null=True, blank=True,
-                              help_text="شباهت کسینوسی موضوع پیشنهاد با تخصص استاد؛ خالی = تخصص ثبت نشده")
+    score = models.FloatField("امتیاز نهایی", null=True, blank=True,
+                              help_text="امتیاز ۰ تا ۱ که رتبه از روی آن ساخته شد: نمره‌ی عامل هوش مصنوعی اگر "
+                                        "داده باشد، وگرنه شباهت معنایی؛ خالی = تخصص ثبت نشده")
+    similarity = models.FloatField("شباهت معنایی", null=True, blank=True,
+                                   help_text="شباهت کسینوسی embedding موضوع با تخصص استاد (یا امتیاز کلیدواژه‌ای در "
+                                             "مسیر پشتیبان)؛ فقط برای غربال اولیه")
+    ai_score = models.PositiveSmallIntegerField("نمره‌ی تناسب عامل", null=True, blank=True,
+                                                help_text="نمره‌ی ۰ تا ۱۰۰ که عامل هوش مصنوعی (مدل زبانی) به تناسب "
+                                                          "تخصص استاد با موضوع داده است")
     reason = models.TextField("توجیه", blank=True)
 
     class Meta:
@@ -181,6 +189,10 @@ class RefereeSuggestion(models.Model):
     @property
     def percent(self):
         return None if self.score is None else round(max(0.0, min(1.0, self.score)) * 100)
+
+    @property
+    def similarity_percent(self):
+        return None if self.similarity is None else round(max(0.0, min(1.0, self.similarity)) * 100)
 
 
 # ───────────────────────── ۳-ب. استخراج موضوع از پیشنهاد ─────────────────────────
